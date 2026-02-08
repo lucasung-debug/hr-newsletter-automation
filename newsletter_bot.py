@@ -25,15 +25,13 @@ def get_naver_content(keyword, category_type="NEWS"):
         "X-Naver-Client-Secret": client_secret
     }
     
-    # 1. 검색어 전략 수정: 인사이트를 얻기 위한 검색어 조합
-    # category_type에 따라 검색어 뒤에 '칼럼', '인터뷰' 등을 붙여서 질 좋은 글을 유도
+    # 1. 검색어 전략: 인사이트 유도를 위한 쿼리 확장
     search_query = keyword
     if category_type == "INSIGHT":
         search_query += " (칼럼 OR 기고 OR 인사이트)"
     elif category_type == "INTERVIEW":
         search_query += " (인터뷰 OR 대담)"
     
-    # 정확도순(sim)으로 상위 30개를 긁어서 최신순 필터링
     params = {"query": search_query, "display": 30, "sort": "sim"}
 
     try:
@@ -57,7 +55,7 @@ def get_naver_content(keyword, category_type="NEWS"):
                             "source": "Media",
                             "date": pub_date.strftime("%Y-%m-%d")
                         })
-                        # 섹션별 2개만 엄선 (너무 길어지지 않게)
+                        # 섹션별 2개만 엄선
                         if len(filtered_content) >= 2:
                             break
                 except:
@@ -67,7 +65,7 @@ def get_naver_content(keyword, category_type="NEWS"):
     except Exception:
         return []
 
-def run_executive_briefing():
+def run_executive_briefing_fixed():
     # 1. 환경 설정
     api_key = os.environ.get('GEMINI_API_KEY')
     app_password = os.environ.get('GMAIL_APP_PASSWORD')
@@ -76,22 +74,21 @@ def run_executive_briefing():
     today = datetime.datetime.now()
     display_date = today.strftime("%Y년 %m월 %d일")
     
-    # 2. [전략적 카테고리 구성] 경영진이 봐야 할 4대 필드
-    # (검색어 + 콘텐츠 타입) 조합
+    # 2. [전략적 카테고리 구성] 경영진용 4대 필드
     search_targets = [
-        # [Macro] 거시 경제 및 산업 흐름 (일반 뉴스)
+        # [Macro] 거시 경제 (뉴스)
         {"kw": "2026년 한국 경제 제조업 전망", "type": "NEWS", "label": "MACRO & INDUSTRY"},
         {"kw": "식품산업 글로벌 트렌드", "type": "NEWS", "label": "MACRO & INDUSTRY"},
         
-        # [Management] 조직관리 및 리더십 (칼럼/기고)
-        {"kw": "조직문화 리더십", "type": "INSIGHT", "label": "LEADERSHIP INSIGHT"},
+        # [Management] 리더십 (칼럼)
+        {"kw": "조직문화 리더십 혁신", "type": "INSIGHT", "label": "LEADERSHIP INSIGHT"},
         {"kw": "MZ세대 성과관리", "type": "INSIGHT", "label": "LEADERSHIP INSIGHT"},
         
-        # [People] 성공 사례 및 인터뷰 (인터뷰)
+        # [People] 인터뷰 (인터뷰)
         {"kw": "CEO 경영 철학", "type": "INTERVIEW", "label": "LEADERS VOICE"},
         {"kw": "혁신 기업 성공 사례", "type": "INTERVIEW", "label": "CASE STUDY"},
 
-        # [Risk & HR] 필수 노무/법률 (뉴스)
+        # [Risk] 노무 (뉴스)
         {"kw": "통상임금 성과급 판례", "type": "NEWS", "label": "RISK MANAGEMENT"}
     ]
     
@@ -101,7 +98,6 @@ def run_executive_briefing():
     for target in search_targets:
         items = get_naver_content(target['kw'], target['type'])
         if items:
-            # 라벨별로 데이터 묶기
             if target['label'] not in collected_data:
                 collected_data[target['label']] = []
             collected_data[target['label']].extend(items)
@@ -110,12 +106,13 @@ def run_executive_briefing():
         print("⚠️ 데이터 수집 실패")
         return
 
-    # 3. AI 분석 요청 (종합 브리핑 모드)
+    # 3. AI 분석 요청 (링크 매핑 오류 해결 버전)
     context_text = ""
     for label, items in collected_data.items():
         context_text += f"\n[SECTION: {label}]\n"
         for item in items:
-            context_text += f"- 제목: {item['title']} / 요약: {item['desc']}\n"
+            # [핵심] AI에게 링크(URL)를 직접 전달
+            context_text += f"- 제목: {item['title']} | 원문링크: {item['link']} | 내용: {item['desc']}\n"
 
     api_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={api_key}"
     
@@ -124,20 +121,20 @@ def run_executive_briefing():
     수집된 정보를 바탕으로 **주간 경영 인사이트 리포트**를 JSON으로 작성하세요.
 
     [작성 원칙]
-    1. **관점(Perspective)**: 단순 정보 전달을 넘어, 이것이 경영진에게 어떤 영감(Inspiration)이나 경각심(Alert)을 주는지 서술하세요.
-    2. **다양성**: 경제 전망부터 타사 CEO의 인터뷰까지 폭넓게 다루세요.
-    3. **Action**: '관리자로서 생각해볼 질문'이나 '실무 적용점'을 한 줄씩 포함하세요.
+    1. **링크 유지**: 입력 데이터에 있는 '원문링크'를 JSON의 'link' 필드에 **그대로 복사**하세요. 절대 다른 링크를 만들거나 순서를 섞지 마세요.
+    2. **관점(Perspective)**: 경영진에게 주는 영감(Inspiration)이나 경각심(Alert) 위주 서술.
+    3. **Action**: 'Takeaway'를 한 줄 포함하세요.
 
     [JSON 출력 양식]
     [
       {{
-        "section": "섹션명 (예: MACRO, LEADERSHIP, VOICES)",
+        "section": "섹션명 (예: MACRO, LEADERSHIP)",
         "headline": "통찰력 있는 헤드라인 (30자)",
         "summary": "내용 요약 및 시사점 (2~3문장)",
-        "key_takeaway": "경영진을 위한 한 줄 요약 (Action Item)",
-        "link": "기사 링크 (없으면 #)" 
+        "key_takeaway": "경영진을 위한 한 줄 요약",
+        "link": "입력 데이터에서 제공된 원문링크 (정확히 복사할 것)" 
       }},
-      ... (섹션별 1~2개씩 선정하여 총 6~8개)
+      ... (섹션별 1~2개씩 선정)
     ]
     
     데이터:
@@ -158,25 +155,17 @@ def run_executive_briefing():
         except:
             ai_data = [{"section": "Error", "headline": "분석 실패", "summary": "원문 참조", "key_takeaway": "System Check", "link": "#"}]
 
-    # 링크 매칭 보정 (AI가 링크를 잘 못 뱉을 경우를 대비해 수집된 데이터에서 역추적)
-    # (간소화를 위해 순차 매칭 로직 사용하지 않고, AI가 비워두면 # 처리)
-    # 실제 프로덕션에선 URL 매칭 로직을 정교화해야 하지만, 여기선 수집된 데이터 풀에서 첫번째 링크를 할당하는 방식으로 보완
-    
-    all_links_pool = []
-    for label in collected_data:
-        for item in collected_data[label]:
-            all_links_pool.append(item['link'])
-            
-    for i, item in enumerate(ai_data):
-        if item.get('link') == "#" or not item.get('link'):
-            item['link'] = all_links_pool[i % len(all_links_pool)]
-
     # 4. HTML 디자인 (매거진 스타일)
     card_html = ""
     current_section = ""
     
     for item in ai_data:
-        # 섹션 헤더 (새로운 섹션이 나올 때만 출력)
+        # 안전장치: 링크가 없으면 네이버 메인이라도 넣음
+        final_link = item.get('link', '#')
+        if final_link == '#': 
+            final_link = 'https://news.naver.com'
+
+        # 섹션 헤더
         if item['section'] != current_section:
             card_html += f"""
             <div style="margin-top: 40px; margin-bottom: 20px; border-bottom: 2px solid #000; padding-bottom: 5px;">
@@ -188,7 +177,7 @@ def run_executive_briefing():
         card_html += f"""
         <div style="margin-bottom: 30px;">
             <h3 style="margin: 0 0 10px 0; font-size: 18px; font-weight: 700; line-height: 1.4;">
-                <a href="{item['link']}" target="_blank" style="text-decoration: none; color: #111;">
+                <a href="{final_link}" target="_blank" style="text-decoration: none; color: #111;">
                     {item['headline']}
                 </a>
             </h3>
@@ -233,7 +222,7 @@ def run_executive_briefing():
     msg = MIMEMultipart()
     msg['From'] = f"Luca (Executive Brief) <{user_email}>"
     msg['To'] = user_email
-    msg['Subject'] = f"[{display_date}] 주간 경영/리더십 브리핑 (Management Insights)"
+    msg['Subject'] = f"[{display_date}] 주간 경영/리더십 브리핑 (Fixed Link Ver)"
     msg.attach(MIMEText(final_html, 'html'))
 
     with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
@@ -242,4 +231,4 @@ def run_executive_briefing():
     print(f"✅ 경영 브리핑 발송 완료!")
 
 if __name__ == "__main__":
-    run_executive_briefing()
+    run_executive_briefing_fixed()
