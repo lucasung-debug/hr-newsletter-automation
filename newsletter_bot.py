@@ -8,94 +8,127 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from urllib.parse import quote
 
-def run_linked_hr_newsletter():
+def run_premium_food_hr_newsletter():
+    # 1. 환경 변수 및 기본 설정
     api_key = os.environ.get('GEMINI_API_KEY')
     app_password = os.environ.get('GMAIL_APP_PASSWORD')
-    user_email = "proposition97@gmail.com" # 성명재 매니저님 이메일
+    user_email = "proposition97@gmail.com"
 
     today = datetime.datetime.now()
     week_ago = today - datetime.timedelta(days=7)
     display_date = today.strftime("%Y년 %m월 %d일")
     
-    # 1. 뉴스 및 링크 수집 [cite: 2026-02-08]
-    keywords = ["인사관리", "노무이슈", "HRD트렌드"]
-    news_data_list = [] 
+    # 2. 식품 제조업 맞춤형 뉴스 수집 (키워드 고도화)
+    # 오뚜기라면 인사팀에 실질적으로 필요한 키워드로 변경
+    keywords = ["식품산업 채용", "제조업 중대재해", "생산직 노무관리", "외국인 근로자 비자", "푸드테크 HR"]
+    
+    collected_news_data = []
+    seen_titles = set() # 중복 기사 제거용
+
+    print(f"[{display_date}] 식품/제조 HR 뉴스 수집 시작...")
     
     for kw in keywords:
         query = f"{kw} after:{week_ago.strftime('%Y-%m-%d')}"
         url = f"https://news.google.com/rss/search?q={quote(query)}&hl=ko&gl=KR&ceid=KR:ko"
         feed = feedparser.parse(url)
-        for entry in feed.entries[:1]: # 키워드당 1개 최신 뉴스 추출
-            news_data_list.append({
-                "title": entry.title,
-                "link": entry.link
-            })
+        
+        # 키워드별 상위 1개 기사만 엄선
+        for entry in feed.entries[:1]:
+            if entry.title not in seen_titles:
+                collected_news_data.append({
+                    "title": entry.title,
+                    "link": entry.link,
+                    "keyword": kw # 어떤 키워드로 수집됐는지 추적
+                })
+                seen_titles.add(entry.title)
 
-    # 2. AI 뉴스레터 본문 생성 요청 [cite: 2026-02-08]
+    # 수집된 뉴스가 너무 많으면 3개로 제한 (스압 방지)
+    collected_news_data = collected_news_data[:3]
+
+    # 3. AI에게 카드 뉴스 스타일 HTML 생성 요청
     api_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={api_key}"
     
-    # AI에게 전달할 뉴스 텍스트 구성
+    # 프롬프트에 '식품 제조업' 페르소나와 '카드 뉴스' 포맷을 강력하게 주입
     news_context = ""
-    for item in news_data_list:
-        news_context += f"기사제목: {item['title']}\n"
+    for idx, item in enumerate(collected_news_data):
+        news_context += f"{idx+1}. 기사제목: {item['title']} (키워드: {item['keyword']}, 링크: {item['link']})\n"
 
     prompt = f"""
-    당신은 오뚜기라면 인사팀 '성명재' 매니저입니다.
-    아래 뉴스들의 핵심 요약과 인사팀 시사점을 작성하세요.
-    [뉴스 데이터]:\n{news_context}
-    
-    [작성 가이드]: 
-    - 각 뉴스는 <h3>태그를 사용하되, 제목 뒤에 (링크 하단 참조)라고 적어주세요.
-    - 본문은 '요약-시사점-실무가이드' 순서로 HTML 형식을 갖추어 작성하세요.
+    당신은 대한민국 최고의 식품 기업 '오뚜기라면'의 인사팀 성명재 매니저입니다.
+    수집된 뉴스를 바탕으로 동료들이 클릭할 수밖에 없는 **카드 뉴스 형태의 HTML**을 작성하세요.
+
+    [수집된 뉴스]
+    {news_context}
+
+    [디자인 및 작성 지침]
+    1. 전체 레이아웃: 각 뉴스마다 '카드' 형태의 디자인을 적용하세요 (테두리, 그림자 효과).
+    2. **이미지 생성**: 각 뉴스 내용에 어울리는 영문 키워드(예: Factory, Food Safety, Worker)를 하나 뽑아서, 
+       `<img src="https://image.pollinations.ai/prompt/{{영문키워드}}?width=800&height=400&nologo=true" style="width:100%; border-radius: 8px 8px 0 0;">` 
+       형태로 삽입하세요. (실제 이미지가 생성되어 나옵니다)
+    3. 배지(Badge): 뉴스 성격에 따라 [📢 현장 필독], [⚖️ 노무 이슈], [💡 채용 트렌드] 중 하나를 제목 위에 다세요.
+    4. 내용 요약: '식품 제조업 인사팀' 관점에서 **결론-대응방안** 위주로 3줄 요약하세요.
+    5. 원문 링크: 카드 하단에 '🔗 원문 보러가기' 버튼을 만드세요.
+
+    [HTML 출력 형식]
+    HTML 태그만 출력하세요. `<html>`이나 `<body>` 태그는 제외하고, 카드들이 나열된 `<div>` 덩어리들만 주세요.
+    스타일은 인라인 CSS(style="...")를 사용하여 메일에서도 깨지지 않게 하세요.
     """
     
     response = requests.post(api_url, headers={'Content-Type': 'application/json'}, 
                              data=json.dumps({"contents": [{"parts": [{"text": prompt}]}]}))
     
     if response.status_code == 200:
-        ai_content = response.json()['candidates'][0]['content']['parts'][0]['text']
+        ai_card_content = response.json()['candidates'][0]['content']['parts'][0]['text']
         
-        # 3. 뉴스 제목 및 원문 링크 섹션 별도 생성 [cite: 2026-02-08]
-        links_html = "<h4>🔗 원문 기사 링크</h4><ul style='font-size: 13px; color: #555;'>"
-        for item in news_data_list:
-            links_html += f"<li><a href='{item['link']}' target='_blank' style='color: #007bff;'>{item['title']}</a></li>"
-        links_html += "</ul>"
-
-        # 4. 전체 HTML 템플릿 구성 [cite: 2026-02-08]
-        html_body = f"""
+        # 4. 최종 HTML 이메일 템플릿 조립 (오뚜기 브랜드 아이덴티티 적용)
+        final_html = f"""
         <html>
-        <body style="font-family: 'Malgun Gothic', sans-serif; line-height: 1.6; color: #333;">
-            <div style="max-width: 600px; margin: auto; border: 1px solid #ddd; padding: 20px;">
-                <div style="background-color: #FFD400; padding: 10px; text-align: center;">
-                    <h2 style="margin: 0; color: #ED1C24;">🍜 오뚜기라면 주간 HR 브리핑</h2>
-                    <p style="margin: 5px 0 0 0; font-weight: bold;">발행일: {display_date}</p>
+        <head>
+            <style>
+                @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;700&display=swap');
+                body {{ font-family: 'Noto Sans KR', sans-serif; background-color: #f4f4f4; margin: 0; padding: 0; }}
+                .container {{ max-width: 600px; margin: 0 auto; background-color: #ffffff; }}
+                .header {{ background-color: #FFD400; padding: 20px; text-align: center; border-bottom: 3px solid #ED1C24; }}
+                .footer {{ background-color: #333333; color: #ffffff; padding: 20px; text-align: center; font-size: 12px; }}
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <div class="header">
+                    <h1 style="color: #ED1C24; margin: 0; font-size: 24px;">🍜 오뚜기라면 HR Weekly</h1>
+                    <p style="margin: 10px 0 0 0; font-weight: bold; color: #333;">{display_date} | 성명재 매니저 드림</p>
                 </div>
-                <div style="padding: 20px 0;">
-                    <p>안녕하세요, <b>성명재 매니저</b>입니다. 이번 주 수집된 주요 HR 기사 원문과 분석 내용을 공유합니다.</p>
-                    <hr style="border: 0; border-top: 1px solid #eee;">
-                    {ai_content}
-                    <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;">
-                    {links_html}
+
+                <div style="padding: 20px; color: #555; line-height: 1.6;">
+                    안녕하세요, 오뚜기라면 가족 여러분! 🙇‍♂️<br>
+                    이번 주는 <b>식품 안전, 생산 현장 노무 이슈, 그리고 최신 채용 트렌드</b>를 중심으로 정리했습니다.<br>
+                    현업에 바로 적용할 수 있는 인사이트를 확인해 보세요.
                 </div>
-                <div style="background-color: #f9f9f9; padding: 15px; font-size: 11px; color: #888;">
-                    본 메일은 AI 기반 자동화 시스템으로 발송되었습니다. [cite: 2026-02-08]<br>
-                    수집 기간: {week_ago.strftime('%Y-%m-%d')} ~ {today.strftime('%Y-%m-%d')}
+
+                <div style="padding: 0 20px 20px 20px;">
+                    {ai_card_content}
+                </div>
+
+                <div class="footer">
+                    본 뉴스레터는 HR 업무 자동화 시스템에 의해 발송되었습니다.<br>
+                    문의: 인사팀 성명재 매니저 (proposition97@gmail.com)
                 </div>
             </div>
         </body>
         </html>
         """
 
+        # 5. 이메일 발송
         msg = MIMEMultipart()
-        msg['From'] = f"성명재 매니저 <{user_email}>"
+        msg['From'] = f"오뚜기라면 성명재 매니저 <{user_email}>"
         msg['To'] = user_email
-        msg['Subject'] = f"[{display_date}] HR 트렌드 분석 및 원문 링크"
-        msg.attach(MIMEText(html_body, 'html'))
+        msg['Subject'] = f"[{display_date}] 🍜 식품/제조업 HR 핵심 트렌드 (카드뉴스)"
+        msg.attach(MIMEText(final_html, 'html'))
 
         with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
             server.login(user_email, app_password)
             server.sendmail(user_email, user_email, msg.as_string())
-        print(f"✅ {display_date} 원문 링크 포함 버전 발송 성공!")
+        print(f"✅ {display_date} 프리미엄 카드 뉴스레터 발송 완료!")
 
 if __name__ == "__main__":
-    run_linked_hr_newsletter()
+    run_premium_food_hr_newsletter()
