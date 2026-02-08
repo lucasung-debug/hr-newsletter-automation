@@ -16,7 +16,7 @@ def clean_html(raw_html):
     return re.sub(cleanr, '', raw_html)
 
 # -----------------------------------------------------------
-# 2. 뉴스 수집 (지속 가능한 불변의 키워드 전략)
+# 2. 뉴스 수집 (인사이트 & 동향 중심 키워드 강화)
 # -----------------------------------------------------------
 def fetch_news_by_category(target_type):
     client_id = os.environ.get('NAVER_CLIENT_ID')
@@ -25,24 +25,22 @@ def fetch_news_by_category(target_type):
     if not client_id or not client_secret:
         return []
 
-    # [핵심 변경] 연도(Year)나 특정 사건을 제거하고, '테마' 위주로 변경
+    # [핵심 변경] 단순 명사가 아니라 '전망', '사례', '전략' 등을 붙여 분석 기사 유도
     if target_type == "MACRO":
-        # PART 1: 경영 환경 (BCG View) - 언제 검색해도 그 주의 핫이슈가 걸리도록 설계
         keywords = [
-            "국내외 경제 전망 및 금리 환율",      # 경제 지표는 매주 변하므로 항상 유효
-            "글로벌 기업 경영 혁신 및 리더십",     # 타사 사례 벤치마킹
-            "인공지능 AI 기술 비즈니스 적용",      # 향후 수년간 지속될 메가 트렌드
-            "인구 구조 변화와 소비 시장 트렌드",   # 저출산/고령화 등 사회 변화
-            "글로벌 공급망 이슈 및 지정학적 리스크" # 전쟁, 무역 분쟁 등 대외 변수
+            "국내외 경제 금리 환율 전망",         # 단순 지표 X -> 미래 전망 O
+            "글로벌 기업 경영 혁신 리더십 성공 사례",     # 단순 소식 X -> 벤치마킹 사례 O
+            "생성형 AI 비즈니스 적용 트렌드 및 전략",     # 단순 기술 X -> 적용 전략 O
+            "인구 구조 변화 소비 시장 트렌드 분석",       # 단순 통계 X -> 분석 리포트 O
+            "글로벌 공급망 리스크 관리 대응 전략"         # 단순 이슈 X -> 대응책 O
         ]
     else: # MICRO
-        # PART 2: 직무 전문성 (HR Expert View) - 제조업 HR의 본질적 고민
         keywords = [
-            "식품산업 최신 동향 및 푸드테크",      # 오뚜기 본업 (항상 최신 기술/트렌드 수집)
-            "제조업 중대재해처벌법 및 안전 보건",  # 법적 리스크 (판례는 계속 나옴)
-            "노동법 이슈 및 통상임금 성과급",      # 보상/노무 이슈 (매년 반복되는 사이클)
-            "생산직 채용 및 인력 운영 전략",       # 제조업의 영원한 숙제 (인력난)
-            "최신 HR 트렌드 및 조직문화 혁신"      # 평가, 보상, 문화 등 HR 일반
+            "식품산업 푸드테크 최신 기술 동향",           # 단순 뉴스 X -> 기술 동향 O
+            "제조업 중대재해처벌법 대응 및 판례 분석",    # 단순 사고 X -> 판례 분석 O
+            "통상임금 성과급 제도 개선 사례",             # 단순 협상 X -> 제도 개선 사례 O
+            "제조업 생산직 인력 운영 및 채용 전략",       # 단순 공고 X -> 운영 전략 O
+            "최신 HR 조직문화 혁신 기업 사례"             # 단순 행사 X -> 혁신 사례 O
         ]
 
     url = "https://openapi.naver.com/v1/search/news.json"
@@ -55,14 +53,12 @@ def fetch_news_by_category(target_type):
     seen_titles = set()
     
     for kw in keywords:
-        # 정확도순(sim)으로 검색하면, 해당 키워드 내에서 '지금 가장 뜨거운' 기사가 올라옴
+        # 정확도순(sim)으로 검색하여 '분석적'인 기사를 우선 노출
         params = {"query": kw, "display": 10, "sort": "sim"}
         try:
             response = requests.get(url, headers=headers, params=params)
             if response.status_code == 200:
                 items = response.json().get('items', [])
-                
-                # 날짜 필터링 (최근 7일)
                 now = datetime.datetime.now(datetime.timezone.utc)
                 seven_days_ago = now - datetime.timedelta(days=7)
 
@@ -88,9 +84,9 @@ def fetch_news_by_category(target_type):
     return collected_news
 
 # -----------------------------------------------------------
-# 3. 메인 실행 로직
+# 3. 메인 실행 로직 (안전장치 포함)
 # -----------------------------------------------------------
-def run_perennial_briefing():
+def run_insight_briefing():
     api_key = os.environ.get('GEMINI_API_KEY')
     app_password = os.environ.get('GMAIL_APP_PASSWORD')
     user_email = "proposition97@gmail.com"
@@ -98,45 +94,40 @@ def run_perennial_briefing():
     today = datetime.datetime.now()
     display_date = today.strftime("%Y년 %m월 %d일")
     
-    print(f"[{display_date}] Sustainable Insight 수집 중...")
+    print(f"[{display_date}] 인사이트 뉴스 수집 중...")
     
     macro_news = fetch_news_by_category("MACRO")
     micro_news = fetch_news_by_category("MICRO")
     
     if not macro_news and not micro_news:
-        print("⚠️ 데이터 수집 실패")
+        print("⚠️ 수집 실패")
         return
 
     all_news_map = {}
     global_id = 1
     context_text = ""
     
-    context_text += "--- [PART 1: MACRO (Management View)] ---\n"
+    context_text += "--- [PART 1: MACRO] ---\n"
     for item in macro_news:
-        item['id'] = global_id
-        all_news_map[global_id] = item
+        item['id'] = str(global_id)
+        all_news_map[str(global_id)] = item
         context_text += f"[ID:{global_id}] {item['title']} | {item['desc']}\n"
         global_id += 1
         
-    context_text += "\n--- [PART 2: MICRO (HR Expert View)] ---\n"
+    context_text += "\n--- [PART 2: MICRO] ---\n"
     for item in micro_news:
-        item['id'] = global_id
-        all_news_map[global_id] = item
+        item['id'] = str(global_id)
+        all_news_map[str(global_id)] = item
         context_text += f"[ID:{global_id}] {item['title']} | {item['desc']}\n"
         global_id += 1
 
-    print(f"📡 총 {len(all_news_map)}개 후보 기사 분석 중...")
+    print(f"📡 총 {len(all_news_map)}개 기사 분석 요청...")
 
     api_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={api_key}"
     
-    # 프롬프트: 시의성에 구애받지 않는 통찰력 요구
     prompt = f"""
     당신은 오뚜기라면 경영진을 위한 전략 컨설턴트입니다.
     제공된 뉴스 데이터를 바탕으로 **총 10개의 핵심 아젠다**를 선정하세요.
-
-    [선정 기준]
-    - 이번 주에 발생한 뉴스 중, 경영진이 반드시 알아야 할 '변화의 신호(Signal)'를 포착하세요.
-    - 단순 사건 전달보다는, 미래 전략 수립에 필요한 인사이트 위주로 선정하세요.
 
     [JSON 출력 양식]
     'ref_id'는 제공된 데이터의 [ID] 번호입니다.
@@ -144,21 +135,19 @@ def run_perennial_briefing():
     {{
       "part1_macro": [
         {{
-          "headline": "거시적 관점의 헤드라인 (30자)",
+          "headline": "헤드라인 (30자 이내)",
           "summary": "핵심 내용 요약",
-          "implication": "경영진을 위한 거시적 시사점",
-          "ref_id": 123
-        }},
-        ... (5개)
+          "implication": "경영 시사점",
+          "ref_id": "1"
+        }}
       ],
       "part2_micro": [
         {{
-          "headline": "직무/산업 특화 헤드라인 (30자)",
+          "headline": "헤드라인 (30자 이내)",
           "summary": "핵심 내용 요약",
-          "implication": "오뚜기라면 현장 적용을 위한 제언",
-          "ref_id": 456
-        }},
-        ... (5개)
+          "implication": "실무 시사점",
+          "ref_id": "10"
+        }}
       ]
     }}
 
@@ -170,7 +159,8 @@ def run_perennial_briefing():
                              data=json.dumps({"contents": [{"parts": [{"text": prompt}]}]}))
     
     final_parts = {"part1": [], "part2": []}
-    
+    ai_success = False
+
     if response.status_code == 200:
         try:
             raw_text = response.json()['candidates'][0]['content']['parts'][0]['text']
@@ -178,21 +168,47 @@ def run_perennial_briefing():
             ai_results = json.loads(clean_json)
             
             for item in ai_results.get('part1_macro', []):
-                original = all_news_map.get(item['ref_id'])
-                if original:
+                ref_id = str(item.get('ref_id'))
+                if ref_id in all_news_map:
+                    original = all_news_map[ref_id]
                     item['link'] = original['link']
                     item['date'] = original['date']
                     final_parts["part1"].append(item)
-                    
+
             for item in ai_results.get('part2_micro', []):
-                original = all_news_map.get(item['ref_id'])
-                if original:
+                ref_id = str(item.get('ref_id'))
+                if ref_id in all_news_map:
+                    original = all_news_map[ref_id]
                     item['link'] = original['link']
                     item['date'] = original['date']
                     final_parts["part2"].append(item)
+            
+            ai_success = True
+            print("✅ AI 분석 및 ID 매칭 성공")
+
         except Exception as e:
-            print(f"파싱 에러: {e}")
-            return
+            print(f"⚠️ AI 파싱 에러: {e}")
+            ai_success = False
+
+    # 안전장치 (Fallback)
+    if not ai_success or (not final_parts['part1'] and not final_parts['part2']):
+        print("🚨 백업 데이터 사용")
+        for item in macro_news[:5]:
+            final_parts['part1'].append({
+                "headline": item['title'],
+                "summary": item['desc'][:80] + "...",
+                "implication": "원문 기사를 참고하여 주십시오.",
+                "link": item['link'],
+                "date": item['date']
+            })
+        for item in micro_news[:5]:
+            final_parts['part2'].append({
+                "headline": item['title'],
+                "summary": item['desc'][:80] + "...",
+                "implication": "주요 HR/산업 이슈입니다.",
+                "link": item['link'],
+                "date": item['date']
+            })
 
     # HTML 조립
     def create_card(item, color):
@@ -213,6 +229,9 @@ def run_perennial_briefing():
 
     html_part1 = "".join([create_card(item, "#E3F2FD") for item in final_parts['part1']])
     html_part2 = "".join([create_card(item, "#FFF3E0") for item in final_parts['part2']])
+    
+    if not html_part1: html_part1 = "<p style='color:#666; font-size:13px;'>금주 주요 거시경제 뉴스가 없습니다.</p>"
+    if not html_part2: html_part2 = "<p style='color:#666; font-size:13px;'>금주 주요 산업/HR 뉴스가 없습니다.</p>"
 
     final_html = f"""
     <!DOCTYPE html>
@@ -233,7 +252,6 @@ def run_perennial_briefing():
                     <div style="background:#00483A; color:#fff; font-size:12px; font-weight:bold; padding:4px 10px; border-radius:20px; margin-right:10px;">PART 1</div>
                     <h2 style="margin:0; font-size:20px; color:#00483A;">MACRO & SOCIETY</h2>
                 </div>
-                <p style="font-size:13px; color:#666; margin-bottom:20px;">경제 전망, 글로벌 트렌드, 사회 변화 등 거시적 경영 환경 (5건)</p>
                 {html_part1}
             </div>
 
@@ -242,12 +260,11 @@ def run_perennial_briefing():
                     <div style="background:#ED1C24; color:#fff; font-size:12px; font-weight:bold; padding:4px 10px; border-radius:20px; margin-right:10px;">PART 2</div>
                     <h2 style="margin:0; font-size:20px; color:#ED1C24;">INDUSTRY & HR FOCUS</h2>
                 </div>
-                <p style="font-size:13px; color:#666; margin-bottom:20px;">식품/제조 산업 동향 및 인사/노무 핵심 실무 이슈 (5건)</p>
                 {html_part2}
             </div>
 
             <div style="margin-top: 60px; padding-top: 20px; border-top: 1px solid #eee; text-align: center; font-size: 11px; color: #aaa;">
-                <p>Strategic Intelligence for Ottogi Ramyun Leadership<br>Automated by Luca's Agent</p>
+                <p>Automated by Luca's Agent</p>
             </div>
         </div>
     </body>
@@ -263,7 +280,7 @@ def run_perennial_briefing():
     with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
         server.login(user_email, app_password)
         server.sendmail(user_email, user_email, msg.as_string())
-    print(f"✅ 유지보수 프리(Free) 리포트 발송 완료!")
+    print(f"✅ 리포트 발송 완료 (인사이트 키워드 적용)")
 
 if __name__ == "__main__":
-    run_perennial_briefing()
+    run_insight_briefing()
