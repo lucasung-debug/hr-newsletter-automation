@@ -8,17 +8,14 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
 def clean_html(raw_html):
-    # 네이버 API가 주는 제목의 <b>태그 등을 제거
     cleanr = re.compile('<.*?>|&quot;|&apos;|&gt;|&lt;')
     return re.sub(cleanr, '', raw_html)
 
-def get_naver_news(keyword):
+def get_naver_news_premium(keyword):
     client_id = os.environ.get('NAVER_CLIENT_ID')
     client_secret = os.environ.get('NAVER_CLIENT_SECRET')
     
-    # 키가 제대로 넘어왔는지 확인
     if not client_id or not client_secret:
-        print("❌ 에러: 네이버 API 키가 main.yml에서 전달되지 않았습니다.")
         return []
 
     url = "https://openapi.naver.com/v1/search/news.json"
@@ -26,7 +23,7 @@ def get_naver_news(keyword):
         "X-Naver-Client-Id": client_id,
         "X-Naver-Client-Secret": client_secret
     }
-    # sort='sim': 정확도순(관련성 높은순), display=3: 상위 3개만
+    # 베테랑 관리자를 위해 '정확도(sim)' 위주로 3개 엄선
     params = {"query": keyword, "display": 3, "sort": "sim"}
 
     try:
@@ -38,18 +35,16 @@ def get_naver_news(keyword):
                 news_list.append({
                     "title": clean_html(item['title']),
                     "link": item['originallink'] if item['originallink'] else item['link'],
-                    "desc": clean_html(item['description'])
+                    "desc": clean_html(item['description']),
+                    "pubDate": item['pubDate']
                 })
             return news_list
-        else:
-            print(f"네이버 API 호출 실패 (코드 {response.status_code})")
-            return []
-    except Exception as e:
-        print(f"네이버 요청 중 에러 발생: {e}")
+        return []
+    except Exception:
         return []
 
-def run_naver_clipping():
-    # 1. 기본 설정
+def run_premium_insight_report():
+    # 1. 환경 설정
     api_key = os.environ.get('GEMINI_API_KEY')
     app_password = os.environ.get('GMAIL_APP_PASSWORD')
     user_email = "proposition97@gmail.com"
@@ -57,96 +52,165 @@ def run_naver_clipping():
     today = datetime.datetime.now()
     display_date = today.strftime("%Y년 %m월 %d일")
     
-    # 2. 네이버 뉴스 수집 (핵심 키워드)
-    keywords = ["식품산업 경영환경 인사관리 동향",      # 식품업계 심층 분석
-    "제조업 중대재해 판례 안전보건 정책",    # 현장 안전 및 법적 리스크
-    "성과급 통상임금 대법원 판례 선고",      # 임금 관련 급변 이슈 (성과급 등)
-    "한국 거시경제 지표 제조업 고용",        # 국내 경제 및 채용 시장 흐름
-    "글로벌 HR 트렌드 전략 인력 재편",       # 세계적 인사 흐름
-    "2026년 노동법 개정안 노무 인사이트"]
-    collected_data = {}
+    # 2. [전략적 키워드] 20년 차 인사 관리자/임원용 High-Level 키워드
+    keywords = [
+        "식품산업 경영환경 인사전략",     # 산업 동향
+        "제조업 중대재해 판례 가이드",    # 리스크 관리 (판례 중심)
+        "성과급 통상임금 대법원 판결",    # 임금/보상 이슈 (가장 민감)
+        "한국 거시경제 제조업 고용지표",  # 경제 흐름
+        "글로벌 HR 트렌드 리스킬링",      # 미래 전략
+        "2026년 개정 노동법 실무해설"     # 법적 준거성
+    ]
     
-    print(f"[{display_date}] 네이버 뉴스 클리핑 시작...")
+    collected_data = {}
+    print(f"[{display_date}] Premium Insight 수집 시작...")
 
     for kw in keywords:
-        items = get_naver_news(kw)
+        items = get_naver_news_premium(kw)
         if items:
             collected_data[kw] = items
-            print(f"- '{kw}' 관련 기사 {len(items)}개 수집 완료")
 
     if not collected_data:
-        print("⚠️ 수집된 뉴스가 없습니다. main.yml 설정을 확인하세요.")
+        print("⚠️ 수집된 데이터가 없습니다.")
         return
 
-    # 3. AI 분석 요청
+    # 3. AI 심층 분석 요청 (JSON 구조화)
     news_context = ""
     for kw, items in collected_data.items():
-        news_context += f"\n[키워드: {kw}]\n"
+        news_context += f"\n[주제: {kw}]\n"
         for item in items:
-            news_context += f"- 제목: {item['title']}\n"
+            news_context += f"- 기사: {item['title']} / 내용: {item['desc']}\n"
 
     api_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={api_key}"
     
+    # 프롬프트: '해설'과 '판례 분석'을 강조
     prompt = f"""
-    당신은 오뚜기라면 인사팀 '성명재 매니저'입니다.
-    네이버 뉴스 검색결과를 바탕으로 주간 HR 인사이트 리포트를 HTML로 작성하세요.
+    당신은 오뚜기라면의 20년 차 인사 책임자(CHRO)를 보좌하는 수석 전문위원 'Luca'입니다.
+    수집된 뉴스를 분석하여 다음 구조의 JSON 데이터로 출력하세요.
 
-    [뉴스 데이터]
+    [분석 가이드]
+    1. 단순 요약이 아닌, **'경영적 시사점'**과 **'법적 쟁점(판례)'** 위주로 분석할 것.
+    2. 특히 성과급, 통상임금 이슈는 대법원 판결 흐름을 짚어줄 것.
+    3. 톤앤매너: 냉철하고 전문적인 비즈니스 톤.
+
+    [JSON 출력 양식]
+    [
+      {{
+        "category": "주제 카테고리 (예: 노무 리스크, 글로벌 동향)",
+        "headline": "인사이트가 담긴 헤드라인 (30자 이내)",
+        "summary": "핵심 사실 1문장",
+        "insight": "오뚜기라면 인사팀을 위한 실무 제언 또는 법적 해석 (2문장)",
+        "keyword": "관련 키워드 1개 (예: Legal, Global, Wage)"
+      }},
+      ... (총 5~6개 아이템 선정)
+    ]
+    
+    뉴스 데이터:
     {news_context}
-
-    [작성 지침]
-    1. **Executive Summary**: 전체 동향을 3문장으로 요약.
-    2. **Key Issues**: 각 키워드별로 섹션을 나누어 '주요 이슈'와 '오뚜기라면 HR팀의 대응 방안'을 서술.
-    3. 스타일: 깔끔한 비즈니스 리포트 스타일 (회색 배경, 카드 형태).
+    
+    오직 JSON 리스트만 출력하세요. 마크다운 제외.
     """
     
-    print("🤖 AI 보고서 생성 중...")
+    print("🤖 AI 심층 분석 중...")
     response = requests.post(api_url, headers={'Content-Type': 'application/json'}, 
                              data=json.dumps({"contents": [{"parts": [{"text": prompt}]}]}))
     
+    ai_data = []
     if response.status_code == 200:
-        ai_content = response.json()['candidates'][0]['content']['parts'][0]['text']
-        ai_content = ai_content.replace("```html", "").replace("```", "")
+        raw_text = response.json()['candidates'][0]['content']['parts'][0]['text']
+        clean_json = raw_text.replace("```json", "").replace("```", "").strip()
+        try:
+            ai_data = json.loads(clean_json)
+        except:
+            ai_data = [{"category": "System", "headline": "분석 데이터 로드 실패", "summary": "원문 링크를 확인해주세요.", "insight": "API 응답 오류", "keyword": "Error"}]
 
-        # 4. 링크 모음 (부록)
-        links_html = "<h4>🔗 네이버 뉴스 원문 바로가기</h4><ul style='font-size: 13px; color: #666;'>"
-        for kw, items in collected_data.items():
-            for item in items:
-                 links_html += f"<li>[{kw}] <a href='{item['link']}' target='_blank' style='color: #007bff; text-decoration: none;'>{item['title']}</a></li>"
-        links_html += "</ul>"
-
-        # 5. 최종 HTML 조립
-        final_html = f"""
-        <html>
-        <body style="margin: 0; padding: 0; background-color: #ffffff; font-family: 'Malgun Gothic', sans-serif;">
-            <div style="max-width: 700px; margin: 0 auto; border: 1px solid #eeeeee;">
-                <div style="background-color: #03C75A; padding: 30px 40px;">
-                    <h1 style="margin: 0; color: #ffffff; font-size: 24px;">NAVER News HR Clipping</h1>
-                    <p style="margin: 5px 0 0 0; color: #eebbff; font-size: 14px;">오뚜기라면 성명재 매니저 | {display_date}</p>
-                </div>
-                <div style="padding: 40px;">
-                    {ai_content}
-                    <hr style="border: 0; border-top: 1px solid #eee; margin: 40px 0;">
-                    {links_html}
-                </div>
-                <div style="background-color: #f9f9f9; padding: 20px; text-align: center; color: #888; font-size: 12px;">
-                    Data provided by Naver Search API
-                </div>
+    # 4. 미니멀리즘 HTML 조립 (Notion 스타일)
+    # Python으로 디자인을 통제하여 깨짐 방지
+    
+    card_list_html = ""
+    
+    # 키워드별 뉴스 링크 매핑 (AI 결과와 매칭)
+    # AI가 생성한 순서대로 매칭하되, 링크는 수집된 데이터 중 가장 관련성 높은 첫 번째 것을 사용한다고 가정
+    # (더 정교한 매칭을 위해선 AI에게 링크도 같이 넘겨야 하나, 토큰 절약을 위해 간소화)
+    
+    all_links = [item['link'] for kw in collected_data for item in collected_data[kw]]
+    
+    for idx, item in enumerate(ai_data):
+        # 링크 할당 (순환)
+        link = all_links[idx % len(all_links)]
+        
+        # 카테고리별 포인트 컬러
+        badge_color = "#333"
+        if "노무" in item['category'] or "법" in item['category'] or "임금" in item['category']:
+            badge_color = "#ED1C24" # 오뚜기 레드 (중요 이슈)
+        elif "글로벌" in item['category'] or "경제" in item['category']:
+            badge_color = "#0055AA" # 신뢰의 블루
+            
+        card_list_html += f"""
+        <div style="margin-bottom: 30px; border-bottom: 1px solid #eee; padding-bottom: 25px;">
+            <div style="font-size: 11px; font-weight: 700; color: {badge_color}; letter-spacing: 1px; margin-bottom: 8px; text-transform: uppercase;">
+                {item['category']}
             </div>
-        </body>
-        </html>
+            <h3 style="margin: 0 0 10px 0; font-size: 18px; font-weight: 600; line-height: 1.4;">
+                <a href="{link}" target="_blank" style="text-decoration: none; color: #111; border-bottom: 1px solid transparent; transition: border-color 0.2s;">
+                    {item['headline']} ↗
+                </a>
+            </h3>
+            <p style="margin: 0 0 12px 0; font-size: 14px; color: #555; line-height: 1.6;">
+                <span style="font-weight: 600; color: #333;">[Fact]</span> {item['summary']}
+            </p>
+            <div style="background-color: #f7f7f5; padding: 12px 15px; border-radius: 6px; font-size: 13px; color: #333; line-height: 1.6; border-left: 3px solid {badge_color};">
+                <span style="font-weight: 700;">💡 Insight:</span> {item['insight']}
+            </div>
+        </div>
         """
 
-        msg = MIMEMultipart()
-        msg['From'] = f"성명재 매니저 <{user_email}>"
-        msg['To'] = user_email
-        msg['Subject'] = f"[{display_date}] 네이버 뉴스 기반 HR 인사이트"
-        msg.attach(MIMEText(final_html, 'html'))
+    final_html = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    </head>
+    <body style="margin: 0; padding: 0; background-color: #ffffff; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #333;">
+        <div style="max-width: 640px; margin: 0 auto; padding: 40px 20px;">
+            
+            <div style="margin-bottom: 50px; padding-bottom: 20px; border-bottom: 2px solid #111;">
+                <div style="font-size: 12px; font-weight: bold; color: #888; margin-bottom: 5px;">WEEKLY HR REPORT</div>
+                <h1 style="margin: 0; font-size: 28px; font-weight: 800; letter-spacing: -0.5px; color: #111;">
+                    HR <span style="color: #ED1C24;">Insight</span> Brief.
+                </h1>
+                <p style="margin: 10px 0 0 0; font-size: 14px; color: #666;">
+                    {display_date} | 오뚜기라면 인사팀 성명재
+                </p>
+            </div>
 
-        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
-            server.login(user_email, app_password)
-            server.sendmail(user_email, user_email, msg.as_string())
-        print(f"✅ 네이버 뉴스 클리핑 발송 완료!")
+            <div>
+                {card_list_html}
+            </div>
+
+            <div style="margin-top: 60px; padding-top: 20px; border-top: 1px solid #eee; font-size: 12px; color: #999;">
+                <p style="font-weight: bold; color: #666; margin-bottom: 10px;">📌 수집된 원문 소스 (Reference)</p>
+                <ul style="list-style: none; padding: 0; margin: 0;">
+                    {''.join([f'<li style="margin-bottom: 5px;"><a href="{item["link"]}" target="_blank" style="color: #999; text-decoration: none;">- {item["title"]}</a></li>' for kw in collected_data for item in collected_data[kw]][:5])}
+                </ul>
+                <p style="margin-top: 20px;">Automated by Ottogi Ramyun HR Bot (v3.0)</p>
+            </div>
+        </div>
+    </body>
+    </html>
+    """
+
+    # 5. 발송
+    msg = MIMEMultipart()
+    msg['From'] = f"Luca (HR Manager) <{user_email}>"
+    msg['To'] = user_email
+    msg['Subject'] = f"[{display_date}] 주간 HR 경영 인사이트 (성명재 매니저)"
+    msg.attach(MIMEText(final_html, 'html'))
+
+    with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+        server.login(user_email, app_password)
+        server.sendmail(user_email, user_email, msg.as_string())
+    print(f"✅ {display_date} 프리미엄 리포트 발송 완료!")
 
 if __name__ == "__main__":
-    run_naver_clipping()
+    run_premium_insight_report()
