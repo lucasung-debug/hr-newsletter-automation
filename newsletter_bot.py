@@ -1,4 +1,3 @@
-import feedparser
 import requests
 import json
 import datetime
@@ -7,37 +6,49 @@ import os
 import re
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-from urllib.parse import quote
 
-# [핵심 기능] 실제 기사 링크를 방문하여 og:image(썸네일)를 긁어오는 함수
-def scrape_og_image(url):
-    try:
-        # 봇 차단을 막기 위해 일반 브라우저인 척 위장(User-Agent 설정)
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-        }
-        # 3초 안에 응답 없으면 포기 (속도 저하 방지)
-        response = requests.get(url, headers=headers, timeout=3)
-        
-        if response.status_code == 200:
-            html = response.text
-            # 1순위: og:image 태그 찾기
-            og_match = re.search(r'<meta\s+property=["\']og:image["\']\s+content=["\'](.*?)["\']', html, re.IGNORECASE)
-            if og_match:
-                return og_match.group(1)
-            
-            # 2순위: twitter:image 태그 찾기
-            tw_match = re.search(r'<meta\s+name=["\']twitter:image["\']\s+content=["\'](.*?)["\']', html, re.IGNORECASE)
-            if tw_match:
-                return tw_match.group(1)
-                
-    except Exception as e:
-        print(f"이미지 스크래핑 실패 ({url}): {e}")
+def clean_html(raw_html):
+    # 네이버 API가 주는 제목의 <b>태그 등을 제거
+    cleanr = re.compile('<.*?>|&quot;|&apos;|&gt;|&lt;')
+    return re.sub(cleanr, '', raw_html)
+
+def get_naver_news(keyword):
+    client_id = os.environ.get('NAVER_CLIENT_ID')
+    client_secret = os.environ.get('NAVER_CLIENT_SECRET')
     
-    # 실패 시 오뚜기 기본 이미지 반환
-    return "https://dummyimage.com/600x300/ED1C24/ffffff.png&text=Ottogi+HR+News"
+    # 키가 제대로 넘어왔는지 확인
+    if not client_id or not client_secret:
+        print("❌ 에러: 네이버 API 키가 main.yml에서 전달되지 않았습니다.")
+        return []
 
-def run_scraped_thumbnail_newsletter():
+    url = "https://openapi.naver.com/v1/search/news.json"
+    headers = {
+        "X-Naver-Client-Id": client_id,
+        "X-Naver-Client-Secret": client_secret
+    }
+    # sort='sim': 정확도순(관련성 높은순), display=3: 상위 3개만
+    params = {"query": keyword, "display": 3, "sort": "sim"}
+
+    try:
+        response = requests.get(url, headers=headers, params=params)
+        if response.status_code == 200:
+            items = response.json().get('items', [])
+            news_list = []
+            for item in items:
+                news_list.append({
+                    "title": clean_html(item['title']),
+                    "link": item['originallink'] if item['originallink'] else item['link'],
+                    "desc": clean_html(item['description'])
+                })
+            return news_list
+        else:
+            print(f"네이버 API 호출 실패 (코드 {response.status_code})")
+            return []
+    except Exception as e:
+        print(f"네이버 요청 중 에러 발생: {e}")
+        return []
+
+def run_naver_clipping():
     # 1. 기본 설정
     api_key = os.environ.get('GEMINI_API_KEY')
     app_password = os.environ.get('GMAIL_APP_PASSWORD')
@@ -45,148 +56,92 @@ def run_scraped_thumbnail_newsletter():
 
     today = datetime.datetime.now()
     display_date = today.strftime("%Y년 %m월 %d일")
-    week_ago = today - datetime.timedelta(days=7)
     
-    # 2. 뉴스 수집
-    keywords = ["식품산업 채용", "제조업 중대재해", "생산직 인사관리", "푸드테크"]
-    collected_news_data = []
-    seen_titles = set()
+    # 2. 네이버 뉴스 수집 (핵심 키워드)
+    keywords = ["식품업계 인사", "제조업 중대재해", "생산직 임금협상", "푸드테크"]
+    collected_data = {}
     
-    print("📡 뉴스 기사 방문 및 이미지 추출 중 (시간이 조금 걸립니다)...")
-    
+    print(f"[{display_date}] 네이버 뉴스 클리핑 시작...")
+
     for kw in keywords:
-        query = f"{kw} after:{week_ago.strftime('%Y-%m-%d')}"
-        url = f"https://news.google.com/rss/search?q={quote(query)}&hl=ko&gl=KR&ceid=KR:ko"
-        feed = feedparser.parse(url)
-        
-        for entry in feed.entries[:1]:
-            if entry.title not in seen_titles:
-                # [중요] 여기서 실제 링크를 방문해 이미지를 가져옵니다.
-                real_thumbnail = scrape_og_image(entry.link)
-                
-                collected_news_data.append({
-                    "title": entry.title, 
-                    "link": entry.link,
-                    "img_url": real_thumbnail # 스크래핑한 이미지 주소
-                })
-                seen_titles.add(entry.title)
+        items = get_naver_news(kw)
+        if items:
+            collected_data[kw] = items
+            print(f"- '{kw}' 관련 기사 {len(items)}개 수집 완료")
 
-    # 비상용 데이터
-    if not collected_news_data:
-        collected_news_data.append({
-            "title": "오뚜기라면, 글로벌 식품 안전 기준 선도", 
-            "link": "https://www.ottogi.co.kr",
-            "img_url": "https://dummyimage.com/600x300/ED1C24/ffffff.png&text=Ottogi+News"
-        })
+    if not collected_data:
+        print("⚠️ 수집된 뉴스가 없습니다. main.yml 설정을 확인하세요.")
+        return
 
-    # 3. AI 요약 요청
+    # 3. AI 분석 요청
+    news_context = ""
+    for kw, items in collected_data.items():
+        news_context += f"\n[키워드: {kw}]\n"
+        for item in items:
+            news_context += f"- 제목: {item['title']}\n"
+
     api_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={api_key}"
-    news_text_block = "\n".join([f"- {item['title']}" for item in collected_news_data])
     
     prompt = f"""
-    당신은 오뚜기라면 인사팀 성명재 매니저입니다.
-    아래 뉴스 목록을 분석하여 JSON 데이터만 출력하세요.
-    
-    [뉴스 목록]
-    {news_text_block}
+    당신은 오뚜기라면 인사팀 '성명재 매니저'입니다.
+    네이버 뉴스 검색결과를 바탕으로 주간 HR 인사이트 리포트를 HTML로 작성하세요.
 
-    [JSON 요청 양식]
-    [
-      {{
-        "title": "기사 제목 (30자 이내, 핵심만)",
-        "summary": "핵심 내용 2줄 요약 (식품 제조업 HR 관점)"
-      }},
-      ...
-    ]
-    
-    오직 JSON 리스트만 출력하세요.
+    [뉴스 데이터]
+    {news_context}
+
+    [작성 지침]
+    1. **Executive Summary**: 전체 동향을 3문장으로 요약.
+    2. **Key Issues**: 각 키워드별로 섹션을 나누어 '주요 이슈'와 '오뚜기라면 HR팀의 대응 방안'을 서술.
+    3. 스타일: 깔끔한 비즈니스 리포트 스타일 (회색 배경, 카드 형태).
     """
     
-    print("🤖 AI 요약 진행 중...")
+    print("🤖 AI 보고서 생성 중...")
     response = requests.post(api_url, headers={'Content-Type': 'application/json'}, 
                              data=json.dumps({"contents": [{"parts": [{"text": prompt}]}]}))
     
-    ai_data = []
     if response.status_code == 200:
-        raw_text = response.json()['candidates'][0]['content']['parts'][0]['text']
-        clean_json = raw_text.replace("```json", "").replace("```", "").strip()
-        try:
-            ai_data = json.loads(clean_json)
-        except:
-            ai_data = [{"title": "분석 오류", "summary": "원문을 확인해주세요."}]
+        ai_content = response.json()['candidates'][0]['content']['parts'][0]['text']
+        ai_content = ai_content.replace("```html", "").replace("```", "")
 
-    # 4. HTML 조립
-    cards_html = ""
-    for idx, item in enumerate(ai_data):
-        if idx < len(collected_news_data):
-            link = collected_news_data[idx]['link']
-            real_img_url = collected_news_data[idx]['img_url']
-        else:
-            link = "#"
-            real_img_url = "https://dummyimage.com/600x300/ccc/000.png&text=No+Image"
-        
-        cards_html += f"""
-        <div style="background: white; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 15px rgba(0,0,0,0.1); margin-bottom: 30px; border: 1px solid #eee;">
-            <div style="background-color: #ED1C24; color: white; padding: 5px 15px; font-size: 12px; font-weight: bold; display: inline-block; border-radius: 0 0 10px 0;">
-                NEWS {idx+1}
-            </div>
-            
-            <div style="width: 100%; height: 200px; overflow: hidden; background-color: #f0f0f0;">
-                <a href="{link}" target="_blank" style="display: block; width: 100%; height: 100%;">
-                    <img src="{real_img_url}" alt="기사 썸네일" style="width: 100%; height: 100%; object-fit: cover; border: 0;">
-                </a>
-            </div>
-            
-            <div style="padding: 20px;">
-                <h3 style="margin: 0 0 10px 0; font-size: 18px; line-height: 1.4;">
-                    <a href="{link}" target="_blank" style="text-decoration: none; color: #333;">{item['title']}</a>
-                </h3>
-                <p style="margin: 0; color: #666; font-size: 14px; line-height: 1.6;">{item['summary']}</p>
-                
-                <div style="margin-top: 15px; text-align: right;">
-                     <a href="{link}" target="_blank" style="text-decoration: none; color: #ED1C24; font-weight: bold; font-size: 13px; border: 1px solid #ED1C24; padding: 5px 10px; border-radius: 4px;">
-                        🔗 원문 읽기
-                     </a>
+        # 4. 링크 모음 (부록)
+        links_html = "<h4>🔗 네이버 뉴스 원문 바로가기</h4><ul style='font-size: 13px; color: #666;'>"
+        for kw, items in collected_data.items():
+            for item in items:
+                 links_html += f"<li>[{kw}] <a href='{item['link']}' target='_blank' style='color: #007bff; text-decoration: none;'>{item['title']}</a></li>"
+        links_html += "</ul>"
+
+        # 5. 최종 HTML 조립
+        final_html = f"""
+        <html>
+        <body style="margin: 0; padding: 0; background-color: #ffffff; font-family: 'Malgun Gothic', sans-serif;">
+            <div style="max-width: 700px; margin: 0 auto; border: 1px solid #eeeeee;">
+                <div style="background-color: #03C75A; padding: 30px 40px;">
+                    <h1 style="margin: 0; color: #ffffff; font-size: 24px;">NAVER News HR Clipping</h1>
+                    <p style="margin: 5px 0 0 0; color: #eebbff; font-size: 14px;">오뚜기라면 성명재 매니저 | {display_date}</p>
+                </div>
+                <div style="padding: 40px;">
+                    {ai_content}
+                    <hr style="border: 0; border-top: 1px solid #eee; margin: 40px 0;">
+                    {links_html}
+                </div>
+                <div style="background-color: #f9f9f9; padding: 20px; text-align: center; color: #888; font-size: 12px;">
+                    Data provided by Naver Search API
                 </div>
             </div>
-        </div>
+        </body>
+        </html>
         """
 
-    final_html = f"""
-    <html>
-    <body style="margin: 0; padding: 0; background-color: #f4f4f4; font-family: 'Malgun Gothic', sans-serif;">
-        <div style="max-width: 600px; margin: 0 auto; background-color: #f4f4f4;">
-            <div style="background-color: #FFD400; padding: 30px 20px; text-align: center; border-bottom: 4px solid #ED1C24;">
-                <h1 style="margin: 0; color: #ED1C24; font-size: 26px;">🍜 오뚜기라면 HR Insight</h1>
-                <p style="margin: 10px 0 0 0; font-weight: bold; color: #333;">{display_date} | 성명재 매니저</p>
-            </div>
-            
-            <div style="padding: 20px;">
-                <p style="text-align: center; color: #666; margin-bottom: 30px;">
-                    식품 제조 현장의 혁신과 안전을 위한<br>이번 주 핵심 뉴스입니다.
-                </p>
-                {cards_html}
-            </div>
-            
-            <div style="text-align: center; padding: 20px; color: #999; font-size: 12px;">
-                © 2026 Ottogi Ramyun HR Team. Automated by Github Actions.
-            </div>
-        </div>
-    </body>
-    </html>
-    """
+        msg = MIMEMultipart()
+        msg['From'] = f"성명재 매니저 <{user_email}>"
+        msg['To'] = user_email
+        msg['Subject'] = f"[{display_date}] 네이버 뉴스 기반 HR 인사이트"
+        msg.attach(MIMEText(final_html, 'html'))
 
-    # 5. 이메일 발송
-    msg = MIMEMultipart()
-    msg['From'] = f"오뚜기라면 성명재 <{user_email}>"
-    msg['To'] = user_email
-    msg['Subject'] = f"[{display_date}] 🍜 HR 핵심 뉴스 (실제 썸네일 포함)"
-    msg.attach(MIMEText(final_html, 'html'))
-
-    with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
-        server.login(user_email, app_password)
-        server.sendmail(user_email, user_email, msg.as_string())
-    print(f"✅ {display_date} 스크래핑 버전 발송 완료!")
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+            server.login(user_email, app_password)
+            server.sendmail(user_email, user_email, msg.as_string())
+        print(f"✅ 네이버 뉴스 클리핑 발송 완료!")
 
 if __name__ == "__main__":
-    run_scraped_thumbnail_newsletter()
+    run_naver_clipping()
