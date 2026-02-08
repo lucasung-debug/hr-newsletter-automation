@@ -25,18 +25,22 @@ def extract_json_from_text(text):
         return None
 
 # -----------------------------------------------------------
-# 2. 뉴스 수집 (고정 키워드 + 안전한 쿼리)
+# 2. 뉴스 수집 (장벽 제거 버전)
 # -----------------------------------------------------------
-def fetch_news_fixed(category):
+def fetch_news_emergency(category):
     client_id = os.environ.get('NAVER_CLIENT_ID')
     client_secret = os.environ.get('NAVER_CLIENT_SECRET')
-    if not client_id or not client_secret: return []
+    
+    # API 키가 없으면 빈 리스트 반환 -> 나중에 더미 데이터로 대체됨
+    if not client_id or not client_secret: 
+        print("⚠️ API Key가 없습니다.")
+        return []
 
-    # [안전장치 1] 검증된 키워드만 사용 (AI 생성 X)
+    # [변경] 검색어 조건을 다 빼고 가장 넓은 범위로 검색
     if category == "MACRO":
-        keywords = ["2026년 경제 전망", "글로벌 경영 전략", "AI 비즈니스 트렌드", "미국 금리 환율 영향", "기업 ESG 경영 사례"]
+        keywords = ["경제 전망", "금리", "환율", "기업 경영"]
     else:
-        keywords = ["식품산업 푸드테크", "제조업 중대재해처벌법", "생산직 통상임금 성과급", "식품업계 글로벌 전략", "HR 조직문화 혁신"]
+        keywords = ["식품산업", "오뚜기", "라면", "고용노동부"]
 
     url = "https://openapi.naver.com/v1/search/news.json"
     headers = {"X-Naver-Client-Id": client_id, "X-Naver-Client-Secret": client_secret}
@@ -45,14 +49,14 @@ def fetch_news_fixed(category):
     seen = set()
     
     for kw in keywords:
-        # 쿼리: 키워드 + (전망/분석) -노이즈
-        query = f"{kw} (전망 OR 분석 OR 사례) -포토 -인사 -부고"
+        # [변경] 복잡한 연산자 제거, 그냥 키워드만 던짐
         try:
-            resp = requests.get(url, headers=headers, params={"query": query, "display": 5, "sort": "sim"})
+            resp = requests.get(url, headers=headers, params={"query": kw, "display": 5, "sort": "sim"})
             if resp.status_code == 200:
                 items = resp.json().get('items', [])
                 now = datetime.datetime.now(datetime.timezone.utc)
-                limit = now - datetime.timedelta(days=7) # 최근 7일
+                # [변경] 기간을 14일로 늘려서 하나라도 더 잡히게 함
+                limit = now - datetime.timedelta(days=14) 
                 
                 for item in items:
                     try:
@@ -68,23 +72,24 @@ def fetch_news_fixed(category):
                                 })
                                 seen.add(t)
                     except: continue
-        except: continue
+        except Exception as e:
+            print(f"API Error: {e}")
+            continue
     
-    # 최신순 정렬 후 상위 10개만 리턴
     return sorted(collected, key=lambda x: x['date'], reverse=True)[:10]
 
 # -----------------------------------------------------------
-# 3. 메인 실행 로직 (절대 실패하지 않는 구조)
+# 3. 메인 실행 로직
 # -----------------------------------------------------------
-def run_final_stable_bot():
+def run_ultimate_fallback():
     api_key = os.environ.get('GEMINI_API_KEY')
     app_password = os.environ.get('GMAIL_APP_PASSWORD')
     user_email = "proposition97@gmail.com"
     today = datetime.datetime.now().strftime("%Y년 %m월 %d일")
     
-    print("1. 뉴스 수집 중...")
-    macro_news = fetch_news_fixed("MACRO")
-    micro_news = fetch_news_fixed("MICRO")
+    print("1. 뉴스 수집 시도...")
+    macro_news = fetch_news_emergency("MACRO")
+    micro_news = fetch_news_emergency("MICRO")
     
     # 데이터 준비
     ctx = "--- [MACRO NEWS] ---\n"
@@ -92,16 +97,14 @@ def run_final_stable_bot():
     ctx += "\n--- [MICRO NEWS] ---\n"
     for i, n in enumerate(micro_news): ctx += f"[F-{i}] {n['title']} | {n['desc']}\n"
 
-    print("2. AI 분석 요청...")
+    print(f"수집된 뉴스 개수: Macro({len(macro_news)}), Micro({len(micro_news)})")
+
+    # AI 분석 요청
     api_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={api_key}"
     prompt = f"""
-    경영진 보고용 뉴스 브리핑을 작성하세요.
-    
-    [조건]
-    1. MACRO(M-) 뉴스 중 3~4개 선정.
-    2. MICRO(F-) 뉴스 중 3~4개 선정.
-    3. 없는 내용은 지어내지 말 것.
-    
+    뉴스 요약 리포트를 작성하세요.
+    데이터가 부족하면 일반적인 경영 상식을 기반으로 작성하세요.
+
     [JSON 포맷]
     {{
       "part1": [ {{"headline": "...", "summary": "...", "implication": "...", "ref_id": "M-0"}} ],
@@ -113,37 +116,59 @@ def run_final_stable_bot():
     final_p1 = []
     final_p2 = []
     
-    try:
-        res = requests.post(api_url, headers={'Content-Type': 'application/json'}, data=json.dumps({"contents": [{"parts": [{"text": prompt}]}]}))
-        if res.status_code == 200:
-            parsed = extract_json_from_text(res.json()['candidates'][0]['content']['parts'][0]['text'])
-            if parsed:
-                # ID 매칭
-                for item in parsed.get('part1', []):
-                    idx = int(item['ref_id'].replace('M-', ''))
-                    if idx < len(macro_news):
-                        n = macro_news[idx]
-                        item.update({'link': n['link'], 'date': n['date']})
-                        final_p1.append(item)
-                for item in parsed.get('part2', []):
-                    idx = int(item['ref_id'].replace('F-', ''))
-                    if idx < len(micro_news):
-                        n = micro_news[idx]
-                        item.update({'link': n['link'], 'date': n['date']})
-                        final_p2.append(item)
-    except Exception as e:
-        print(f"AI Error: {e}")
+    # AI 시도
+    if macro_news or micro_news:
+        try:
+            res = requests.post(api_url, headers={'Content-Type': 'application/json'}, data=json.dumps({"contents": [{"parts": [{"text": prompt}]}]}))
+            if res.status_code == 200:
+                parsed = extract_json_from_text(res.json()['candidates'][0]['content']['parts'][0]['text'])
+                if parsed:
+                    for item in parsed.get('part1', []):
+                        idx_str = str(item.get('ref_id', '')).replace('M-', '')
+                        if idx_str.isdigit():
+                            idx = int(idx_str)
+                            if idx < len(macro_news):
+                                n = macro_news[idx]
+                                item.update({'link': n['link'], 'date': n['date']})
+                                final_p1.append(item)
+                    for item in parsed.get('part2', []):
+                        idx_str = str(item.get('ref_id', '')).replace('F-', '')
+                        if idx_str.isdigit():
+                            idx = int(idx_str)
+                            if idx < len(micro_news):
+                                n = micro_news[idx]
+                                item.update({'link': n['link'], 'date': n['date']})
+                                final_p2.append(item)
+        except Exception as e:
+            print(f"AI Error: {e}")
 
-    # [안전장치 2] AI가 실패했거나 결과가 비어있으면 원본 뉴스 강제 투입 (절대 빈칸 방지)
+    # [최후의 보루] 리스트가 여전히 비어있다면, 더미 데이터를 강제로 넣음
+    # 이렇게 하면 API가 다 죽어도 메일 레이아웃은 나옴
     if not final_p1:
-        print("⚠️ PART 1 비상 백업 가동")
-        for n in macro_news[:4]:
-            final_p1.append({"headline": n['title'], "summary": n['desc'], "implication": "원문 기사를 참고하세요.", "link": n['link'], "date": n['date']})
-            
+        print("⚠️ PART 1 데이터 없음 -> 강제 데이터 주입")
+        final_p1.append({
+            "headline": "[시스템 알림] 뉴스 데이터 수집 실패",
+            "summary": "네이버 뉴스 API에서 데이터를 가져오지 못했습니다. API 설정이나 검색 키워드를 확인해주세요.",
+            "implication": "System Check Required",
+            "link": "https://www.naver.com",
+            "date": today
+        })
+        # 수집된 원본이라도 있으면 넣기
+        for n in macro_news[:3]:
+             final_p1.append({"headline": n['title'], "summary": n['desc'], "implication": "원문 참조", "link": n['link'], "date": n['date']})
+
     if not final_p2:
-        print("⚠️ PART 2 비상 백업 가동")
-        for n in micro_news[:4]:
-            final_p2.append({"headline": n['title'], "summary": n['desc'], "implication": "원문 기사를 참고하세요.", "link": n['link'], "date": n['date']})
+        print("⚠️ PART 2 데이터 없음 -> 강제 데이터 주입")
+        final_p2.append({
+            "headline": "[시스템 알림] 뉴스 데이터 수집 실패",
+            "summary": "관련된 최신 뉴스를 찾을 수 없습니다. 검색 기간을 늘리거나 키워드를 변경해야 합니다.",
+            "implication": "Data Not Found",
+            "link": "https://www.ottogi.co.kr",
+            "date": today
+        })
+        for n in micro_news[:3]:
+             final_p2.append({"headline": n['title'], "summary": n['desc'], "implication": "원문 참조", "link": n['link'], "date": n['date']})
+
 
     # HTML 생성
     def mk_card(i, bg):
@@ -163,14 +188,14 @@ def run_final_stable_bot():
         {''.join([mk_card(x, '#E8F5E9') for x in final_p1])}
         <h2 style="color:#ED1C24;margin-top:40px;">PART 2. MICRO</h2>
         {''.join([mk_card(x, '#FFEBEE') for x in final_p2])}
-        <div style="margin-top:50px;text-align:center;font-size:11px;color:#aaa;">Automated by Stable Bot</div>
+        <div style="margin-top:50px;text-align:center;font-size:11px;color:#aaa;">Automated by Ultimate Fallback Bot</div>
     </body></html>
     """
 
     msg = MIMEMultipart()
-    msg['From'] = f"Luca (Stable Bot) <{user_email}>"
+    msg['From'] = f"Luca (System) <{user_email}>"
     msg['To'] = user_email
-    msg['Subject'] = f"[{today}] 주간 경영전략 브리핑 (안정화 버전)"
+    msg['Subject'] = f"[{today}] 주간 경영전략 브리핑 (긴급 복구)"
     msg.attach(MIMEText(html, 'html'))
 
     with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
@@ -179,4 +204,4 @@ def run_final_stable_bot():
     print("✅ 발송 완료")
 
 if __name__ == "__main__":
-    run_final_stable_bot()
+    run_ultimate_fallback()
