@@ -25,35 +25,18 @@ def extract_json_from_text(text):
         return None
 
 # -----------------------------------------------------------
-# 2. [Quality Control] 검증된 고품질 키워드 (하드코딩)
+# 2. 뉴스 수집 (고정 키워드 + 안전한 쿼리)
 # -----------------------------------------------------------
-def get_verified_keywords():
-    return {
-        # PART 1: 경영진이 봐야 할 거시 담론
-        "macro": [
-            "2026년 글로벌 경제 전망 금리",
-            "글로벌 공급망 리스크 대응 전략",
-            "생성형 AI 기업 적용 성공 사례",
-            "미국 대선 이후 무역 정책 변화",
-            "글로벌 기업 ESG 경영 트렌드"
-        ],
-        # PART 2: 오뚜기라면 실무/현장 핵심
-        "micro": [
-            "식품산업 푸드테크 기술 동향",
-            "제조업 스마트팩토리 구축 사례",
-            "중대재해처벌법 판례 및 대응",
-            "생산직 통상임금 성과급 쟁점",
-            "글로벌 K-푸드 수출 전략"
-        ]
-    }
-
-# -----------------------------------------------------------
-# 3. 뉴스 수집 (노이즈 필터링 강화)
-# -----------------------------------------------------------
-def fetch_news_pro(keywords, prefix):
+def fetch_news_fixed(category):
     client_id = os.environ.get('NAVER_CLIENT_ID')
     client_secret = os.environ.get('NAVER_CLIENT_SECRET')
     if not client_id or not client_secret: return []
+
+    # [안전장치 1] 검증된 키워드만 사용 (AI 생성 X)
+    if category == "MACRO":
+        keywords = ["2026년 경제 전망", "글로벌 경영 전략", "AI 비즈니스 트렌드", "미국 금리 환율 영향", "기업 ESG 경영 사례"]
+    else:
+        keywords = ["식품산업 푸드테크", "제조업 중대재해처벌법", "생산직 통상임금 성과급", "식품업계 글로벌 전략", "HR 조직문화 혁신"]
 
     url = "https://openapi.naver.com/v1/search/news.json"
     headers = {"X-Naver-Client-Id": client_id, "X-Naver-Client-Secret": client_secret}
@@ -62,192 +45,138 @@ def fetch_news_pro(keywords, prefix):
     seen = set()
     
     for kw in keywords:
-        # [핵심] 검색 쿼리 튜닝: '분석', '전망' 포함 + '포토', '인사', '부고' 제외
-        query = f'{kw} (분석 OR 전망 OR 전략 OR 사례) -포토 -인사 -부고 -오늘의운세'
-        
-        # 정확도(sim) 우선으로 퀄리티 확보
-        params = {"query": query, "display": 5, "sort": "sim"}
-        
+        # 쿼리: 키워드 + (전망/분석) -노이즈
+        query = f"{kw} (전망 OR 분석 OR 사례) -포토 -인사 -부고"
         try:
-            response = requests.get(url, headers=headers, params=params)
-            if response.status_code == 200:
-                items = response.json().get('items', [])
+            resp = requests.get(url, headers=headers, params={"query": query, "display": 5, "sort": "sim"})
+            if resp.status_code == 200:
+                items = resp.json().get('items', [])
                 now = datetime.datetime.now(datetime.timezone.utc)
-                # 기간: 최근 10일 (주말 포함 넉넉하게)
-                limit_date = now - datetime.timedelta(days=10)
-
+                limit = now - datetime.timedelta(days=7) # 최근 7일
+                
                 for item in items:
                     try:
-                        pub_date = parsedate_to_datetime(item['pubDate'])
-                        if pub_date >= limit_date:
-                            title = clean_html(item['title'])
-                            desc = clean_html(item['description'])
-                            
-                            # [2차 필터] 제목에 '할인', '마트', '이벤트' 들어가면 제외 (임원용 아님)
-                            if any(bad_word in title for bad_word in ["할인", "이벤트", "증정", "모집", "부고"]):
-                                continue
-
-                            if title not in seen:
+                        pd = parsedate_to_datetime(item['pubDate'])
+                        if pd >= limit:
+                            t = clean_html(item['title'])
+                            if t not in seen:
                                 collected.append({
-                                    "id_prefix": prefix, 
-                                    "title": title,
-                                    "link": item['originallink'] if item['originallink'] else item['link'],
-                                    "desc": desc,
-                                    "date": pub_date.strftime("%Y-%m-%d")
+                                    "title": t,
+                                    "link": item['originallink'] or item['link'],
+                                    "desc": clean_html(item['description']),
+                                    "date": pd.strftime("%Y-%m-%d")
                                 })
-                                seen.add(title)
+                                seen.add(t)
                     except: continue
         except: continue
-        
-    return collected
+    
+    # 최신순 정렬 후 상위 10개만 리턴
+    return sorted(collected, key=lambda x: x['date'], reverse=True)[:10]
 
 # -----------------------------------------------------------
-# 4. 메인 실행 로직
+# 3. 메인 실행 로직 (절대 실패하지 않는 구조)
 # -----------------------------------------------------------
-def run_quality_restored_briefing():
+def run_final_stable_bot():
     api_key = os.environ.get('GEMINI_API_KEY')
     app_password = os.environ.get('GMAIL_APP_PASSWORD')
     user_email = "proposition97@gmail.com"
     today = datetime.datetime.now().strftime("%Y년 %m월 %d일")
     
-    # 1. 검증된 키워드 가져오기
-    keys = get_verified_keywords()
+    print("1. 뉴스 수집 중...")
+    macro_news = fetch_news_fixed("MACRO")
+    micro_news = fetch_news_fixed("MICRO")
     
-    # 2. 뉴스 수집 (M: Macro, F: Food/Field)
-    print("running fetch news...")
-    macro_news = fetch_news_pro(keys['macro'], "M")
-    micro_news = fetch_news_pro(keys['micro'], "F")
-    
-    # 최신순 정렬 후 상위 10개씩 (과부하 방지)
-    macro_news = sorted(macro_news, key=lambda x: x['date'], reverse=True)[:10]
-    micro_news = sorted(micro_news, key=lambda x: x['date'], reverse=True)[:10]
-    
-    # 3. Context 생성
-    news_map = {}
-    ctx = "--- [PART 1: MACRO CANDIDATES] ---\n"
-    for i, n in enumerate(macro_news):
-        uid = f"M-{i+1}"
-        n['uid'] = uid
-        news_map[uid] = n
-        ctx += f"[ID:{uid}] {n['title']} | {n['desc'][:100]}\n"
-        
-    ctx += "\n--- [PART 2: MICRO CANDIDATES] ---\n"
-    for i, n in enumerate(micro_news):
-        uid = f"F-{i+1}"
-        n['uid'] = uid
-        news_map[uid] = n
-        ctx += f"[ID:{uid}] {n['title']} | {n['desc'][:100]}\n"
+    # 데이터 준비
+    ctx = "--- [MACRO NEWS] ---\n"
+    for i, n in enumerate(macro_news): ctx += f"[M-{i}] {n['title']} | {n['desc']}\n"
+    ctx += "\n--- [MICRO NEWS] ---\n"
+    for i, n in enumerate(micro_news): ctx += f"[F-{i}] {n['title']} | {n['desc']}\n"
 
-    # 4. AI 분석 (BCG 페르소나 강화 + 엄격한 선별)
-    print("asking AI...")
+    print("2. AI 분석 요청...")
     api_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={api_key}"
-    
     prompt = f"""
-    당신은 오뚜기라면의 **전략기획실장(CSO)**입니다.
-    제공된 뉴스 후보군 중에서 경영진 주간회의(Weekly Executive Meeting)에 올릴 **가장 무게감 있고 전략적인 아젠다**를 선별하세요.
-
-    [필수 지침]
-    1. **엄격한 큐레이션**: '할인 행사', '단순 사건사고', '지자체 홍보' 등 **지엽적인 뉴스는 과감히 제외**하세요.
-    2. **Strategic Insight**: 단순 요약이 아니라, 오뚜기라면의 사업 방향(글로벌, 푸드테크, 리스크 관리)에 주는 시사점을 도출하세요.
-    3. **강제 할당**: 
-       - PART 1에는 ID가 'M'으로 시작하는 기사만 넣을 것.
-       - PART 2에는 ID가 'F'로 시작하는 기사만 넣을 것.
-    4. 각 파트별 3~4개의 최상급 기사만 선정하세요.
-
-    [JSON 형식]
+    경영진 보고용 뉴스 브리핑을 작성하세요.
+    
+    [조건]
+    1. MACRO(M-) 뉴스 중 3~4개 선정.
+    2. MICRO(F-) 뉴스 중 3~4개 선정.
+    3. 없는 내용은 지어내지 말 것.
+    
+    [JSON 포맷]
     {{
-      "part1": [ {{"headline": "임원 보고용 헤드라인", "summary": "요약", "implication": "오뚜기라면 전략적 시사점", "ref_id": "M-1"}} ],
-      "part2": [ {{"headline": "임원 보고용 헤드라인", "summary": "요약", "implication": "현장 적용 및 대응 방안", "ref_id": "F-1"}} ]
+      "part1": [ {{"headline": "...", "summary": "...", "implication": "...", "ref_id": "M-0"}} ],
+      "part2": [ {{"headline": "...", "summary": "...", "implication": "...", "ref_id": "F-0"}} ]
     }}
     데이터: {ctx}
     """
     
-    res = requests.post(api_url, headers={'Content-Type': 'application/json'}, data=json.dumps({"contents": [{"parts": [{"text": prompt}]}]}))
+    final_p1 = []
+    final_p2 = []
     
-    final_p1, final_p2 = [], []
-    
-    if res.status_code == 200:
-        try:
+    try:
+        res = requests.post(api_url, headers={'Content-Type': 'application/json'}, data=json.dumps({"contents": [{"parts": [{"text": prompt}]}]}))
+        if res.status_code == 200:
             parsed = extract_json_from_text(res.json()['candidates'][0]['content']['parts'][0]['text'])
             if parsed:
-                # ID 기반 매핑 + 필터링
+                # ID 매칭
                 for item in parsed.get('part1', []):
-                    if item.get('ref_id') in news_map and item['ref_id'].startswith('M'):
-                        original = news_map[item['ref_id']]
-                        item.update({'link': original['link'], 'date': original['date']})
+                    idx = int(item['ref_id'].replace('M-', ''))
+                    if idx < len(macro_news):
+                        n = macro_news[idx]
+                        item.update({'link': n['link'], 'date': n['date']})
                         final_p1.append(item)
-                
                 for item in parsed.get('part2', []):
-                    if item.get('ref_id') in news_map and item['ref_id'].startswith('F'):
-                        original = news_map[item['ref_id']]
-                        item.update({'link': original['link'], 'date': original['date']})
+                    idx = int(item['ref_id'].replace('F-', ''))
+                    if idx < len(micro_news):
+                        n = micro_news[idx]
+                        item.update({'link': n['link'], 'date': n['date']})
                         final_p2.append(item)
-        except: pass
+    except Exception as e:
+        print(f"AI Error: {e}")
 
-    # 5. 최후의 백업 (AI가 너무 많이 걸러내서 비었을 경우 대비)
-    # 여기서는 Raw Data를 그냥 넣지 않고, 제목 필터링을 한 번 더 거친 상위 기사만 넣음
+    # [안전장치 2] AI가 실패했거나 결과가 비어있으면 원본 뉴스 강제 투입 (절대 빈칸 방지)
     if not final_p1:
-        for n in macro_news[:3]: final_p1.append({"headline": n['title'], "summary": n['desc'], "implication": "주요 경제 동향입니다.", "link": n['link'], "date": n['date']})
+        print("⚠️ PART 1 비상 백업 가동")
+        for n in macro_news[:4]:
+            final_p1.append({"headline": n['title'], "summary": n['desc'], "implication": "원문 기사를 참고하세요.", "link": n['link'], "date": n['date']})
+            
     if not final_p2:
-        for n in micro_news[:3]: final_p2.append({"headline": n['title'], "summary": n['desc'], "implication": "주요 산업 동향입니다.", "link": n['link'], "date": n['date']})
+        print("⚠️ PART 2 비상 백업 가동")
+        for n in micro_news[:4]:
+            final_p2.append({"headline": n['title'], "summary": n['desc'], "implication": "원문 기사를 참고하세요.", "link": n['link'], "date": n['date']})
 
-    # 6. HTML 생성
-    def mk_card(i, bg, tag_color):
-        return f"""
-        <div style="margin-bottom:25px; padding-bottom:20px; border-bottom:1px solid #eee;">
-            <div style="font-size:11px; color:#999; margin-bottom:5px;">{i['date']}</div>
-            <h3 style="margin:0 0 10px 0; font-size:18px; font-weight:700; line-height:1.4;">
-                <a href="{i['link']}" target="_blank" style="text-decoration:none; color:#111;">{i['headline']}</a>
-            </h3>
-            <p style="margin:0 0 12px 0; font-size:14px; color:#555; line-height:1.6;">{i['summary']}</p>
-            <div style="background-color:{bg}; padding:12px 15px; border-radius:6px; border-left:4px solid {tag_color};">
-                <p style="margin:0; font-size:13px; font-weight:bold; color:#333;">💡 Strategic Insight</p>
-                <p style="margin:5px 0 0 0; font-size:13px; color:#555;">{i['implication']}</p>
-            </div>
-        </div>
-        """
+    # HTML 생성
+    def mk_card(i, bg):
+        return f"""<div style="margin-bottom:20px;padding:15px;background:{bg};border-radius:8px;">
+        <div style="font-size:11px;color:#888;margin-bottom:5px;">{i['date']}</div>
+        <h3 style="margin:0 0 10px 0;font-size:16px;"><a href="{i['link']}" target="_blank" style="text-decoration:none;color:#111;">{i['headline']}</a></h3>
+        <p style="margin:0 0 10px 0;font-size:13px;color:#555;">{i['summary']}</p>
+        <div style="font-size:12px;font-weight:bold;color:#333;">💡 Insight: {i['implication']}</div></div>"""
 
     html = f"""
-    <html><body style="font-family:'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif; max-width:680px; margin:0 auto; padding:40px 20px; color:#333;">
-        
-        <div style="text-align:center; border-bottom:3px solid #ED1C24; padding-bottom:30px; margin-bottom:50px;">
-            <p style="font-size:11px; font-weight:800; color:#888; letter-spacing:2px; text-transform:uppercase;">Weekly Executive Report</p>
-            <h1 style="margin:10px 0; font-size:32px; font-weight:900; letter-spacing:-1px;">MANAGEMENT <span style="color:#ED1C24;">INSIGHT</span></h1>
-            <p style="font-size:13px; color:#666;">{today} | 오뚜기라면 성명재 매니저</p>
+    <html><body style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:20px;">
+        <div style="text-align:center;border-bottom:3px solid #ED1C24;padding-bottom:15px;margin-bottom:30px;">
+            <h1 style="margin:0;">WEEKLY <span style="color:#ED1C24;">BRIEF</span></h1>
+            <p style="font-size:12px;color:#888;">{today} | 성명재 매니저</p>
         </div>
-        
-        <div style="margin-bottom:60px;">
-            <div style="display:flex; align-items:center; margin-bottom:20px;">
-                <span style="background:#00483A; color:#fff; font-size:11px; font-weight:bold; padding:4px 8px; border-radius:4px; margin-right:10px;">PART 1</span>
-                <h2 style="margin:0; font-size:22px; color:#00483A; font-weight:800;">MACRO & GLOBAL</h2>
-            </div>
-            {''.join([mk_card(x, '#F5F9F8', '#00483A') for x in final_p1])}
-        </div>
-        
-        <div>
-            <div style="display:flex; align-items:center; margin-bottom:20px;">
-                <span style="background:#ED1C24; color:#fff; font-size:11px; font-weight:bold; padding:4px 8px; border-radius:4px; margin-right:10px;">PART 2</span>
-                <h2 style="margin:0; font-size:22px; color:#ED1C24; font-weight:800;">INDUSTRY & HR FOCUS</h2>
-            </div>
-            {''.join([mk_card(x, '#FFF5F5', '#ED1C24') for x in final_p2])}
-        </div>
-        
-        <div style="margin-top:80px; text-align:center; font-size:11px; color:#aaa; border-top:1px solid #eee; padding-top:20px;">
-            Confidential: For Internal Executive Review Only
-        </div>
+        <h2 style="color:#00483A;">PART 1. MACRO</h2>
+        {''.join([mk_card(x, '#E8F5E9') for x in final_p1])}
+        <h2 style="color:#ED1C24;margin-top:40px;">PART 2. MICRO</h2>
+        {''.join([mk_card(x, '#FFEBEE') for x in final_p2])}
+        <div style="margin-top:50px;text-align:center;font-size:11px;color:#aaa;">Automated by Stable Bot</div>
     </body></html>
     """
 
     msg = MIMEMultipart()
-    msg['From'] = f"Luca (Strategy Office) <{user_email}>"
+    msg['From'] = f"Luca (Stable Bot) <{user_email}>"
     msg['To'] = user_email
-    msg['Subject'] = f"[{today}] 주간 경영전략 및 HR 핵심 브리핑 (Premium)"
+    msg['Subject'] = f"[{today}] 주간 경영전략 브리핑 (안정화 버전)"
     msg.attach(MIMEText(html, 'html'))
 
     with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
         server.login(user_email, app_password)
         server.sendmail(user_email, user_email, msg.as_string())
-    print("🚀 퀄리티 복구 완료! 발송 성공!")
+    print("✅ 발송 완료")
 
 if __name__ == "__main__":
-    run_quality_restored_briefing()
+    run_final_stable_bot()
