@@ -1,16 +1,12 @@
 name: Weekly HR Bot
 
 on:
-  # 1. 코드를 저장(Push)할 때마다 무조건 실행 (테스트용)
-  push:
-    branches: [ "main" ]
-  
-  # 2. 수동 실행 버튼
-  workflow_dispatch:
-  
-  # 3. 스케줄러 (테스트를 위해 '매시간 15분'으로 잠시 변경)
   schedule:
-    - cron: '15 * * * *'  # 매시간 15분에 실행 (테스트 후 원래대로 복구)
+    # 한국 시간 09:05 (UTC 00:05) -> 서버 혼잡을 피해 5분 늦춤
+    - cron: '5 0 * * 1-5'
+  
+  # 수동 실행 버튼 (비상용으로 남겨둠)
+  workflow_dispatch:
 
 jobs:
   run-bot:
