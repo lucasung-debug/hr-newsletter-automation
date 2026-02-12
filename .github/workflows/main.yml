@@ -2,8 +2,9 @@ name: Weekly HR Bot
 
 on:
   schedule:
-    # 한국 시간 09:05 (UTC 00:05) -> 서버 혼잡을 피해 5분 늦춤
-    - cron: '5 0 * * 1-5'
+    # GitHub Actions cron 지연(3~5시간) 보정: UTC 21:00 (KST 06:00) 설정 → 실제 KST 09시경 도착 목표
+    # 일~목(UTC) = 월~금(KST)
+    - cron: '0 21 * * 0-4'
   
   # 수동 실행 버튼 (비상용으로 남겨둠)
   workflow_dispatch:
