@@ -97,18 +97,48 @@ def run_silent_fallback_bot():
     # AI 분석 요청
     api_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={api_key}"
     prompt = f"""
-    뉴스 브리핑을 JSON으로 작성하세요.
-    
+    당신은 대기업 HR 전략 애널리스트입니다. 아래 뉴스 데이터를 바탕으로
+    관리직 임원이 즉시 의사결정에 활용할 수 있는 전략 브리핑을 JSON으로 작성하세요.
+
+    [역할]
+    - 불필요한 수식어 제거, 숫자·리스크·의사결정 중심 서술
+    - "뉴스 요약"이 아닌 "임원 보고용 전략 브리핑" 톤
+
     [조건]
-    1. PART 1: M-로 시작하는 뉴스 중 3개.
-    2. PART 2: F-로 시작하는 뉴스 중 3개.
-    
-    [JSON 포맷]
+    1. PART 1 (MACRO): M-로 시작하는 뉴스 중 가장 경영 임팩트가 큰 3개 선정
+    2. PART 2 (MICRO): F-로 시작하는 뉴스 중 가장 HR·사업 임팩트가 큰 3개 선정
+    3. 각 항목은 반드시 아래 4단계로 작성:
+       - fact: 핵심 사실 2문장 이내 (수치 포함 권장)
+       - strategic_meaning: 기업 경영·노동시장 관점 의미 해석 (2~3문장)
+       - business_impact: 인건비·채용·조직운영·생산성·노무리스크 등 우리 회사 영향 구체화 (2~3문장)
+       - recommended_actions: 관리직이 이번 주 바로 검토할 실행 항목 2~3개 (측정 가능한 지표 또는 의사결정 포인트 포함)
+
+    [JSON 포맷 - 반드시 이 구조를 따를 것]
     {{
-      "part1": [ {{"headline": "...", "summary": "...", "implication": "...", "ref_id": "M-0"}} ],
-      "part2": [ {{"headline": "...", "summary": "...", "implication": "...", "ref_id": "F-0"}} ]
+      "part1": [
+        {{
+          "headline": "간결한 전략 헤드라인",
+          "fact": "핵심 사실 요약",
+          "strategic_meaning": "경영·노동시장 관점 해석",
+          "business_impact": "우리 회사에 미칠 구체적 영향",
+          "recommended_actions": ["실행항목1", "실행항목2", "실행항목3"],
+          "ref_id": "M-0"
+        }}
+      ],
+      "part2": [
+        {{
+          "headline": "간결한 전략 헤드라인",
+          "fact": "핵심 사실 요약",
+          "strategic_meaning": "경영·노동시장 관점 해석",
+          "business_impact": "우리 회사에 미칠 구체적 영향",
+          "recommended_actions": ["실행항목1", "실행항목2"],
+          "ref_id": "F-0"
+        }}
+      ]
     }}
-    데이터: {ctx}
+
+    데이터:
+    {ctx}
     """
     
     final_p1 = []
@@ -138,59 +168,89 @@ def run_silent_fallback_bot():
         except Exception as e:
             print(f"AI Error: {e}")
 
-    # [핵심 수정] AI가 실패했거나 비어있으면 -> "시스템 알림" 카드 대신 "원본 뉴스"를 바로 넣음
+    # AI 실패 시 원본 뉴스를 4단계 구조에 맞춰 투입
     if not final_p1:
         print("⚠️ PART 1 AI 실패 -> 원본 뉴스 투입")
         for n in macro_news[:4]:
             final_p1.append({
-                "headline": n['title'], 
-                "summary": n['desc'], 
-                "implication": "원문 기사를 참고하세요.", 
-                "link": n['link'], 
+                "headline": n['title'],
+                "fact": n['desc'],
+                "strategic_meaning": "AI 분석 미제공 — 원문 기사를 직접 확인하세요.",
+                "business_impact": "원문 기사를 통해 자체 영향도를 평가하시기 바랍니다.",
+                "recommended_actions": ["원문 기사 검토 후 관련 부서 공유"],
+                "link": n['link'],
                 "date": n['date']
             })
-            
+
     if not final_p2:
         print("⚠️ PART 2 AI 실패 -> 원본 뉴스 투입")
         for n in micro_news[:4]:
             final_p2.append({
-                "headline": n['title'], 
-                "summary": n['desc'], 
-                "implication": "원문 기사를 참고하세요.", 
-                "link": n['link'], 
+                "headline": n['title'],
+                "fact": n['desc'],
+                "strategic_meaning": "AI 분석 미제공 — 원문 기사를 직접 확인하세요.",
+                "business_impact": "원문 기사를 통해 자체 영향도를 평가하시기 바랍니다.",
+                "recommended_actions": ["원문 기사 검토 후 관련 부서 공유"],
+                "link": n['link'],
                 "date": n['date']
             })
 
-    # HTML 생성
-    def mk_card(i, bg):
-        return f"""<div style="margin-bottom:20px;padding:15px;background:{bg};border-radius:8px;">
-        <div style="font-size:11px;color:#888;margin-bottom:5px;">{i['date']}</div>
-        <h3 style="margin:0 0 10px 0;font-size:16px;"><a href="{i['link']}" target="_blank" style="text-decoration:none;color:#111;">{i['headline']}</a></h3>
-        <p style="margin:0 0 10px 0;font-size:13px;color:#555;">{i['summary']}</p>
-        <div style="font-size:12px;font-weight:bold;color:#333;">💡 Insight: {i['implication']}</div></div>"""
+    # HTML 생성 - 4단계 전략 브리핑 카드
+    def mk_card(i, accent_color):
+        actions_html = ""
+        for idx, action in enumerate(i.get('recommended_actions', []), 1):
+            actions_html += f'<div style="margin-bottom:4px;font-size:12px;color:#222;">☑ {action}</div>'
+
+        return f"""<div style="margin-bottom:24px;padding:0;border-left:4px solid {accent_color};background:#FAFAFA;border-radius:4px;">
+        <div style="padding:16px 18px 14px;">
+            <div style="font-size:10px;color:#999;margin-bottom:6px;letter-spacing:0.5px;">{i['date']}</div>
+            <h3 style="margin:0 0 14px 0;font-size:15px;font-weight:700;line-height:1.4;"><a href="{i['link']}" target="_blank" style="text-decoration:none;color:#111;">{i['headline']}</a></h3>
+            <div style="margin-bottom:12px;padding:10px 12px;background:#FFF;border-radius:4px;">
+                <div style="font-size:10px;font-weight:700;color:{accent_color};margin-bottom:4px;letter-spacing:0.5px;">FACT</div>
+                <div style="font-size:13px;color:#333;line-height:1.5;">{i.get('fact', '')}</div>
+            </div>
+            <div style="margin-bottom:12px;padding:10px 12px;background:#FFF;border-radius:4px;">
+                <div style="font-size:10px;font-weight:700;color:{accent_color};margin-bottom:4px;letter-spacing:0.5px;">STRATEGIC MEANING</div>
+                <div style="font-size:13px;color:#333;line-height:1.5;">{i.get('strategic_meaning', '')}</div>
+            </div>
+            <div style="margin-bottom:12px;padding:10px 12px;background:#FFF;border-radius:4px;">
+                <div style="font-size:10px;font-weight:700;color:{accent_color};margin-bottom:4px;letter-spacing:0.5px;">BUSINESS IMPACT ON OUR COMPANY</div>
+                <div style="font-size:13px;color:#333;line-height:1.5;">{i.get('business_impact', '')}</div>
+            </div>
+            <div style="padding:10px 12px;background:#FFF;border-radius:4px;">
+                <div style="font-size:10px;font-weight:700;color:{accent_color};margin-bottom:6px;letter-spacing:0.5px;">RECOMMENDED HR ACTION</div>
+                {actions_html}
+            </div>
+        </div></div>"""
 
     html = f"""
-    <html><body style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:20px;">
-        <div style="text-align:center;border-bottom:3px solid #ED1C24;padding-bottom:15px;margin-bottom:30px;">
-            <h1 style="margin:0;">WEEKLY <span style="color:#ED1C24;">BRIEF</span></h1>
-            <p style="font-size:12px;color:#888;">{today} | 성명재 매니저</p>
+    <html><body style="font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;max-width:640px;margin:0 auto;padding:20px;background:#FFF;">
+        <div style="text-align:center;border-bottom:3px solid #ED1C24;padding-bottom:15px;margin-bottom:10px;">
+            <h1 style="margin:0;font-size:22px;letter-spacing:1px;">WEEKLY HR <span style="color:#ED1C24;">STRATEGIC BRIEF</span></h1>
+            <p style="font-size:11px;color:#888;margin:6px 0 0;">{today} | 성명재 매니저</p>
         </div>
-        <h2 style="color:#00483A;">PART 1. MACRO</h2>
-        {'' if not final_p1 else ''.join([mk_card(x, '#E8F5E9') for x in final_p1])}
+        <div style="text-align:center;margin-bottom:30px;padding:8px;background:#F5F5F5;border-radius:4px;">
+            <span style="font-size:11px;color:#666;">본 브리핑은 경영진 의사결정 지원을 위해 작성되었습니다</span>
+        </div>
+
+        <h2 style="color:#00483A;font-size:14px;border-bottom:2px solid #00483A;padding-bottom:6px;letter-spacing:1px;">PART 1. MACRO ENVIRONMENT</h2>
+        {'' if not final_p1 else ''.join([mk_card(x, '#00483A') for x in final_p1])}
         {'' if final_p1 else '<p style="color:#999;font-size:12px;">금주 주요 거시경제 뉴스가 없습니다.</p>'}
-        
-        <h2 style="color:#ED1C24;margin-top:40px;">PART 2. MICRO</h2>
-        {'' if not final_p2 else ''.join([mk_card(x, '#FFEBEE') for x in final_p2])}
+
+        <h2 style="color:#ED1C24;margin-top:40px;font-size:14px;border-bottom:2px solid #ED1C24;padding-bottom:6px;letter-spacing:1px;">PART 2. INDUSTRY &amp; HR</h2>
+        {'' if not final_p2 else ''.join([mk_card(x, '#ED1C24') for x in final_p2])}
         {'' if final_p2 else '<p style="color:#999;font-size:12px;">금주 주요 산업/HR 뉴스가 없습니다.</p>'}
-        
-        <div style="margin-top:50px;text-align:center;font-size:11px;color:#aaa;">Automated by Stable Bot</div>
+
+        <div style="margin-top:50px;text-align:center;font-size:10px;color:#bbb;border-top:1px solid #eee;padding-top:12px;">
+            Automated Strategic Brief | Powered by AI Analysis
+        </div>
     </body></html>
     """
 
     msg = MIMEMultipart()
     msg['From'] = f"Luca (Brief) <{user_email}>"
     msg['To'] = user_email
-    msg['Subject'] = f"[{today}] 주간 경영전략 브리핑"
+    msg['Subject'] = f"[{today}] Weekly HR Strategic Brief"
     msg.attach(MIMEText(html, 'html'))
 
     with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
