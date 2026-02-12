@@ -60,14 +60,15 @@ def extract_json_from_text(text):
 
 
 def _title_words(title):
-    """제목에서 2글자 이상 단어 추출 (한글+영문+숫자)."""
+    """제목에서 2글자 이상 단어 추출 (한글+영문+숫자). 따옴표/특수문자 제거."""
+    title = re.sub(r'["\'\u201c\u201d\u2018\u2019\u300c\u300d\u3010\u3011\[\]()…·]', ' ', title)
     stopwords = set("은는이가을를의에서도로와과한다된로써까지만부터")
     words = set(re.findall(r'[가-힣A-Za-z0-9]{2,}', title))
     return {w for w in words if w not in stopwords}
 
 
-def is_near_duplicate(new_title, seen_titles, threshold=0.5):
-    """제목 단어 50% 이상 겹치면 중복 판정."""
+def is_near_duplicate(new_title, seen_titles, threshold=0.4):
+    """제목 단어 40% 이상 겹치면 중복 판정."""
     new_words = _title_words(new_title)
     if not new_words:
         return False
@@ -85,7 +86,7 @@ def is_near_duplicate(new_title, seen_titles, threshold=0.5):
 # ============================================================
 # 2. Gemini API 호출 (재시도 포함)
 # ============================================================
-def call_gemini(api_key, prompt, max_retries=2):
+def call_gemini(api_key, prompt, max_retries=3):
     """Gemini API 호출. 최대 max_retries회 재시도. 성공 시 텍스트, 실패 시 None."""
     api_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={api_key}"
     for attempt in range(max_retries):
@@ -97,78 +98,39 @@ def call_gemini(api_key, prompt, max_retries=2):
                 timeout=60
             )
             if res.status_code != 200:
-                print(f"  Gemini HTTP {res.status_code} (시도 {attempt + 1})")
-                time.sleep(2)
+                print(f"  Gemini HTTP {res.status_code} (시도 {attempt + 1}): {res.text[:300]}")
+                time.sleep(5)
                 continue
-            return res.json()['candidates'][0]['content']['parts'][0]['text']
+            body = res.json()
+            candidates = body.get('candidates')
+            if not candidates:
+                print(f"  Gemini candidates 없음 (시도 {attempt + 1}): {json.dumps(body, ensure_ascii=False)[:300]}")
+                time.sleep(5)
+                continue
+            return candidates[0]['content']['parts'][0]['text']
         except requests.exceptions.Timeout:
             print(f"  Gemini 타임아웃 (시도 {attempt + 1})")
         except Exception as e:
             print(f"  Gemini 오류 (시도 {attempt + 1}): {e}")
-        time.sleep(2)
+        time.sleep(5)
     return None
 
 
 # ============================================================
 # 3. AI 동적 키워드 생성
 # ============================================================
-FIXED_KEYWORDS = {
-    "MACRO": ["한국 경제 전망", "글로벌 식품시장", "원자재 가격 동향"],
-    "HR": ["주52시간제 제조업", "교대근무 제도", "임금피크제 개편"],
+KEYWORDS = {
+    "MACRO": [
+        "한국 경제 전망", "한국은행 기준금리", "원달러 환율 전망",
+        "글로벌 식품시장 동향", "원자재 가격 밀 팜유",
+        "식품 수출 관세", "소비자물가 동향",
+    ],
+    "HR": [
+        "주52시간제 제조업", "교대근무 제도 정책", "임금피크제 개편",
+        "고용노동부 제조업 정책", "기업 윤리경영 컴플라이언스",
+        "제조업 인력난 채용", "노동법 개정 시행",
+    ],
 }
-
-FALLBACK_KEYWORDS = {
-    "MACRO": ["한국은행 기준금리", "환율 전망 수출", "글로벌 라면시장", "식품 수출 관세 규제"],
-    "HR": ["고용노동부 제조업 정책", "기업 윤리경영 컴플라이언스", "제조업 인력난 채용", "노동법 개정 시행"],
-}
-
-
-def generate_keywords(api_key):
-    """Gemini에게 오늘의 최적 검색 키워드 추천 요청."""
-    prompt = f"""당신은 뉴스 검색 키워드 전문가입니다.
-
-[회사 정보]
-{COMPANY_CONTEXT}
-
-오늘 네이버 뉴스 검색에 사용할 최적의 키워드를 추천하세요.
-
-[키워드 생성 규칙]
-- macro: 대한민국 거시경제(GDP, 금리, 환율, 물가)와 세계 식품산업 시장 동향, 원자재(밀·팜유·에너지) 가격 관련 검색어 4개. 오뚜기 자체 뉴스가 아닌 거시적 경제·시장 뉴스를 검색할 키워드여야 함
-- hr: 인사노무(노동법 개정·근로시간·임금)·교대근무 정책·윤리경영/ESG·제조업 산업안전·채용/인력난 관련 검색어 4개
-- 각 키워드는 네이버 뉴스 검색에 최적화된 2~4단어 조합
-- 시의성 있는 키워드 우선 (최근 이슈 반영)
-
-[좋은 키워드 예시]
-- macro: "한국은행 기준금리 동결", "밀 가격 상승 전망", "원달러 환율 수출 영향", "글로벌 라면 수요 증가"
-- hr: "주52시간 탄력근로제 확대", "제조업 교대근무 개선", "2026 최저임금 인상", "식품공장 산업재해 예방"
-
-[나쁜 키워드 — 절대 사용 금지]
-- "오뚜기 신제품", "오뚜기 출시" (회사 자체 뉴스는 별도 수집)
-- "식품", "경제" (너무 넓어서 무관한 뉴스 유입)
-
-[평가 기준]
-1. 네이버 뉴스 검색 시 2~4단어 조합으로 정확한 뉴스 매칭
-2. 최근 1주일 내 실제 뉴스가 존재할 가능성이 높은 시의성
-3. 식품제조업 경영진이 관심을 가질 거시적 주제
-
-반드시 아래 JSON만 출력하세요.
-{{"macro": ["키워드1", "키워드2", "키워드3", "키워드4"], "hr": ["키워드1", "키워드2", "키워드3", "키워드4"]}}"""
-
-    print("1. AI 키워드 생성 중...")
-    raw = call_gemini(api_key, prompt, max_retries=2)
-    if raw:
-        parsed = extract_json_from_text(raw)
-        if parsed and isinstance(parsed.get('macro'), list) and isinstance(parsed.get('hr'), list):
-            macro_kw = FIXED_KEYWORDS["MACRO"] + parsed['macro'][:4]
-            hr_kw = FIXED_KEYWORDS["HR"] + parsed['hr'][:4]
-            print(f"  AI 키워드: MACRO={macro_kw}, HR={hr_kw}")
-            return {"MACRO": macro_kw, "HR": hr_kw}
-
-    print("  AI 키워드 실패 → fallback 사용")
-    return {
-        "MACRO": FIXED_KEYWORDS["MACRO"] + FALLBACK_KEYWORDS["MACRO"],
-        "HR": FIXED_KEYWORDS["HR"] + FALLBACK_KEYWORDS["HR"],
-    }
 
 
 # ============================================================
@@ -255,11 +217,12 @@ def analyze_news(api_key, macro_news, hr_news):
     print("3. AI 뉴스 분석 중...")
     raw = call_gemini(api_key, prompt)
     if not raw:
+        print("  Gemini 응답 없음 (analyze_news)")
         return [], []
 
     parsed = extract_json_from_text(raw)
     if not parsed or not isinstance(parsed.get('part1'), list) or not isinstance(parsed.get('part2'), list):
-        print("  JSON 구조 불일치")
+        print(f"  JSON 구조 불일치 — raw 앞 300자: {raw[:300]}")
         return [], []
 
     final_p1, final_p2 = [], []
@@ -332,7 +295,9 @@ def generate_deep_report(api_key, all_news_ctx):
         if parsed and parsed.get('topic') and parsed.get('content'):
             print(f"  리포트 생성 완료: {parsed['topic']}")
             return parsed
-    print("  리포트 생성 실패")
+        print(f"  리포트 JSON 파싱 실패 — raw 앞 300자: {raw[:300]}")
+    else:
+        print("  Gemini 응답 없음 (generate_deep_report)")
     return None
 
 
@@ -576,16 +541,13 @@ def run_newsletter():
     recipients = [e.strip() for e in recipient_str.split(',') if e.strip()]
     today = datetime.datetime.now().strftime("%Y년 %m월 %d일")
 
-    # Step 1: AI 키워드 생성
-    keywords = generate_keywords(api_key)
-
-    # Step 2: 뉴스 수집
-    print("2. 뉴스 수집 중...")
-    macro_news = fetch_news("MACRO", keywords["MACRO"])
-    hr_news = fetch_news("HR", keywords["HR"])
+    # Step 1: 뉴스 수집 (고정 키워드)
+    print("1. 뉴스 수집 중...")
+    macro_news = fetch_news("MACRO", KEYWORDS["MACRO"])
+    hr_news = fetch_news("HR", KEYWORDS["HR"])
     print(f"  수집 완료: MACRO {len(macro_news)}건, HR {len(hr_news)}건")
 
-    # Step 3: AI 뉴스 분석
+    # Step 2: AI 뉴스 분석
     final_p1, final_p2 = [], []
     if macro_news or hr_news:
         final_p1, final_p2 = analyze_news(api_key, macro_news, hr_news)
@@ -595,7 +557,10 @@ def run_newsletter():
     if not final_p2:
         final_p2 = make_fallback(hr_news, "H")
 
-    # Step 4: 심층 리포트 (MACRO + HR 전체 뉴스 컨텍스트)
+    # Step 3: 심층 리포트 (Gemini 호출 간 5초 딜레이)
+    if macro_news or hr_news:
+        print("  Gemini rate limit 보호: 5초 대기...")
+        time.sleep(5)
     all_ctx = "--- 거시경제·글로벌 식품시장 ---\n"
     for i, n in enumerate(macro_news):
         all_ctx += f"[M-{i}] {n['title']} | {n['desc']}\n"
@@ -604,8 +569,8 @@ def run_newsletter():
         all_ctx += f"[H-{i}] {n['title']} | {n['desc']}\n"
     deep_report = generate_deep_report(api_key, all_ctx) if (macro_news or hr_news) else None
 
-    # Step 5: 회사 소식
-    print("5. 회사 소식 확인 중...")
+    # Step 4: 회사 소식
+    print("4. 회사 소식 확인 중...")
     company_reply = check_company_news_reply(app_password)
     if company_reply:
         print("  회신 발견 → 회사 소식 삽입")
@@ -624,8 +589,8 @@ def run_newsletter():
         else:
             company_html = '<p style="color:#999;font-size:13px;">금일 회사 소식이 없습니다.</p>'
 
-    # Step 6: HTML 생성 & 발송
-    print("6. HTML 생성 & 발송...")
+    # Step 5: HTML 생성 & 발송
+    print("5. HTML 생성 & 발송...")
     html = build_html(today, final_p1, final_p2, deep_report, company_html)
     subject = f"[{today}] Daily HR Strategic Brief - 오뚜기라면"
     send_email(app_password, recipients, subject, html)
