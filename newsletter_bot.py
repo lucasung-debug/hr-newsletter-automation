@@ -117,7 +117,7 @@ def call_gemini(api_key, prompt, max_retries=3):
 
 
 # ============================================================
-# 3. AI 동적 키워드 생성
+# 3. 고정 키워드
 # ============================================================
 KEYWORDS = {
     "MACRO": [
@@ -126,9 +126,10 @@ KEYWORDS = {
         "식품 수출 관세", "소비자물가 동향",
     ],
     "HR": [
-        "주52시간제 제조업", "교대근무 제도 정책", "임금피크제 개편",
-        "고용노동부 제조업 정책", "기업 윤리경영 컴플라이언스",
-        "제조업 인력난 채용", "노동법 개정 시행",
+        "식품제조 주52시간", "제조업 교대근무 개선",
+        "임금피크제 제조업", "고용노동부 식품 제조",
+        "식품공장 산업안전", "제조업 채용 인력난",
+        "근로기준법 개정 제조",
     ],
 }
 
@@ -154,7 +155,7 @@ def fetch_news(category, keywords):
     for kw in keywords:
         try:
             resp = requests.get(url, headers=headers,
-                                params={"query": kw, "display": 10, "sort": "date"},
+                                params={"query": kw, "display": 5, "sort": "date"},
                                 timeout=10)
             if resp.status_code != 200:
                 continue
@@ -178,70 +179,83 @@ def fetch_news(category, keywords):
         except Exception:
             continue
 
-    return sorted(collected, key=lambda x: x['date'], reverse=True)[:10]
+    return sorted(collected, key=lambda x: x['date'], reverse=True)[:5]
 
 
 # ============================================================
-# 5. AI 뉴스 분석 (4단계 전략 브리핑)
+# 5. AI 뉴스 분석 (4단계 전략 브리핑 — 파트별 분할 호출)
 # ============================================================
-def analyze_news(api_key, macro_news, hr_news):
-    """수집된 뉴스를 Gemini로 4단계 분석."""
-    ctx = "--- [MACRO / 거시경제·글로벌 식품시장 뉴스] ---\n"
-    for i, n in enumerate(macro_news):
-        ctx += f"[M-{i}] {n['title']} | {n['desc']}\n"
-    ctx += "\n--- [HR / 인사노무 뉴스] ---\n"
-    for i, n in enumerate(hr_news):
-        ctx += f"[H-{i}] {n['title']} | {n['desc']}\n"
+def analyze_part(api_key, news_list, part_type):
+    """단일 파트(MACRO 또는 HR)의 뉴스를 Gemini로 4단계 분석.
 
-    prompt = f"""당신은 오뚜기라면(OTOKI RAMYON) HR 전략 애널리스트입니다.
+    part_type: "MACRO" 또는 "HR"
+    반환: 분석된 기사 리스트 (0~3개)
+    """
+    if not news_list:
+        return []
+
+    ctx = ""
+    for i, n in enumerate(news_list):
+        ctx += f"[{i}] {n['title']} | {n['desc']}\n"
+
+    if part_type == "MACRO":
+        part_desc = "거시경제·글로벌 식품시장"
+        selection_rule = "거시경제 환경, 글로벌 식품·원자재 시장 트렌드, 수출 규제 변화 등 식품제조기업 경영에 영향을 주는 뉴스만 선정하세요. 특정 기업의 신제품·마케팅·CSR 뉴스는 제외하세요."
+    else:
+        part_desc = "인사노무·컴플라이언스"
+        selection_rule = "근로시간(주52시간), 교대근무, 임금피크제, 산업안전, 고용정책 등 식품제조업 HR에 직접 영향을 주는 뉴스만 선정하세요. 식품제조업과 무관한 업종(병원, IT, 서비스업, 지자체)의 기사는 반드시 제외하세요."
+
+    prompt = f"""당신은 오뚜기라면(OTOKI RAMYON) 인사팀 소속 HR 전략 애널리스트입니다.
+
+[독자] 과장·팀장급 이상 고참 관리자 (의사결정권자)
+[톤] 보고서 형식, 경어체, 수식어 배제, 숫자·데이터·의사결정 포인트 중심
 
 [회사 컨텍스트]
 {COMPANY_CONTEXT}
 
-아래 뉴스를 분석하여 경영진 의사결정용 전략 브리핑을 작성하세요.
+아래 [{part_desc}] 뉴스 후보에서 **1~3개**를 선정하여 전략 브리핑을 작성하세요.
 
-[규칙]
-1. part1 (거시경제+글로벌 식품시장): M- 뉴스 중 거시경제·글로벌 시장 임팩트 상위 3개 선정. 회사 자체 뉴스(신제품 출시, CSR 활동 등)는 제외하고 경제 환경·시장 트렌드·규제 변화 중심으로 선정
-2. part2 (인사노무+컴플라이언스): H- 뉴스 중 HR 임팩트 상위 3개 선정
-3. 각 항목은 fact, strategic_meaning, business_impact, recommended_actions 4단계
-4. business_impact는 반드시 오뚜기라면 관점(식품제조, 교대근무, 수출)에서 서술
-5. recommended_actions: 오늘~내일 즉시 검토 가능한 실행항목 2~3개, 측정지표 포함
-6. 불필요한 수식어 배제, 숫자·리스크·의사결정 중심
+[선정 기준]
+{selection_rule}
+- 관련 뉴스가 없으면 빈 배열 []을 반환하세요. 무관한 기사를 억지로 포함하지 마세요.
+- 품질 우선: 1개라도 좋은 분석이 3개의 얕은 분석보다 낫습니다.
 
-반드시 아래 JSON만 출력하세요. JSON 외 텍스트를 절대 포함하지 마세요.
-{{"part1": [{{"headline": "...", "fact": "...", "strategic_meaning": "...", "business_impact": "...", "recommended_actions": ["...", "..."], "ref_id": "M-0"}}], "part2": [{{"headline": "...", "fact": "...", "strategic_meaning": "...", "business_impact": "...", "recommended_actions": ["...", "..."], "ref_id": "H-0"}}]}}
+[분석 4단계]
+- fact: 핵심 사실 요약 (2~3문장)
+- strategic_meaning: 전략적 의미 (이 뉴스가 왜 중요한지)
+- business_impact: 오뚜기라면 관점의 사업 영향 (식품제조, 교대근무, 수출 관점)
+- recommended_actions: 즉시 검토 가능한 실행항목 2~3개 (측정지표 포함)
 
-데이터:
+반드시 아래 JSON만 출력하세요.
+{{"articles": [{{"headline": "...", "fact": "...", "strategic_meaning": "...", "business_impact": "...", "recommended_actions": ["...", "..."], "ref_id": 0}}]}}
+
+뉴스 후보:
 {ctx}"""
 
-    print("3. AI 뉴스 분석 중...")
+    label = "MACRO" if part_type == "MACRO" else "HR"
+    print(f"  AI 분석 중 ({label})...")
     raw = call_gemini(api_key, prompt)
     if not raw:
-        print("  Gemini 응답 없음 (analyze_news)")
-        return [], []
+        print(f"  Gemini 응답 없음 (analyze_{label})")
+        return []
 
     parsed = extract_json_from_text(raw)
-    if not parsed or not isinstance(parsed.get('part1'), list) or not isinstance(parsed.get('part2'), list):
-        print(f"  JSON 구조 불일치 — raw 앞 300자: {raw[:300]}")
-        return [], []
+    if not parsed or not isinstance(parsed.get('articles'), list):
+        print(f"  JSON 구조 불일치 ({label}) — raw 앞 300자: {raw[:300]}")
+        return []
 
-    final_p1, final_p2 = [], []
-    for item in parsed['part1']:
-        idx_str = str(item.get('ref_id', '')).replace('M-', '')
-        if idx_str.isdigit() and int(idx_str) < len(macro_news):
-            n = macro_news[int(idx_str)]
+    result = []
+    for item in parsed['articles']:
+        ref_id = item.get('ref_id')
+        if isinstance(ref_id, str):
+            ref_id = int(ref_id) if ref_id.isdigit() else -1
+        if isinstance(ref_id, int) and 0 <= ref_id < len(news_list):
+            n = news_list[ref_id]
             item.update({'link': n['link'], 'date': n['date']})
-            final_p1.append(item)
+            result.append(item)
 
-    for item in parsed['part2']:
-        idx_str = str(item.get('ref_id', '')).replace('H-', '')
-        if idx_str.isdigit() and int(idx_str) < len(hr_news):
-            n = hr_news[int(idx_str)]
-            item.update({'link': n['link'], 'date': n['date']})
-            final_p2.append(item)
-
-    print(f"  분석 완료: MACRO {len(final_p1)}건, HR {len(final_p2)}건")
-    return final_p1, final_p2
+    print(f"  {label} 분석 완료: {len(result)}건")
+    return result
 
 
 def make_fallback(news_list, prefix="M"):
@@ -398,6 +412,8 @@ def fetch_company_fallback_news():
             if resp.status_code == 200:
                 for item in resp.json().get('items', []):
                     t = clean_html(item['title'])
+                    if "오뚜기" not in t:
+                        continue
                     if not is_near_duplicate(t, {r['title'] for r in results}):
                         results.append({
                             "title": t,
@@ -547,17 +563,20 @@ def run_newsletter():
     hr_news = fetch_news("HR", KEYWORDS["HR"])
     print(f"  수집 완료: MACRO {len(macro_news)}건, HR {len(hr_news)}건")
 
-    # Step 2: AI 뉴스 분석
-    final_p1, final_p2 = [], []
-    if macro_news or hr_news:
-        final_p1, final_p2 = analyze_news(api_key, macro_news, hr_news)
-
+    # Step 2: AI 분석 PART 1 (거시경제)
+    print("2. AI 분석 시작...")
+    final_p1 = analyze_part(api_key, macro_news, "MACRO") if macro_news else []
     if not final_p1:
         final_p1 = make_fallback(macro_news, "M")
+
+    # Step 3: AI 분석 PART 2 (HR) — 3초 딜레이
+    if macro_news:
+        time.sleep(3)
+    final_p2 = analyze_part(api_key, hr_news, "HR") if hr_news else []
     if not final_p2:
         final_p2 = make_fallback(hr_news, "H")
 
-    # Step 3: 심층 리포트 (Gemini 호출 간 5초 딜레이)
+    # Step 4: 심층 리포트 — 5초 딜레이
     if macro_news or hr_news:
         print("  Gemini rate limit 보호: 5초 대기...")
         time.sleep(5)
@@ -569,8 +588,8 @@ def run_newsletter():
         all_ctx += f"[H-{i}] {n['title']} | {n['desc']}\n"
     deep_report = generate_deep_report(api_key, all_ctx) if (macro_news or hr_news) else None
 
-    # Step 4: 회사 소식
-    print("4. 회사 소식 확인 중...")
+    # Step 5: 회사 소식
+    print("5. 회사 소식 확인 중...")
     company_reply = check_company_news_reply(app_password)
     if company_reply:
         print("  회신 발견 → 회사 소식 삽입")
@@ -589,8 +608,8 @@ def run_newsletter():
         else:
             company_html = '<p style="color:#999;font-size:13px;">금일 회사 소식이 없습니다.</p>'
 
-    # Step 5: HTML 생성 & 발송
-    print("5. HTML 생성 & 발송...")
+    # Step 6: HTML 생성 & 발송
+    print("6. HTML 생성 & 발송...")
     html = build_html(today, final_p1, final_p2, deep_report, company_html)
     subject = f"[{today}] Daily HR Strategic Brief - 오뚜기라면"
     send_email(app_password, recipients, subject, html)
