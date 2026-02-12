@@ -1,26 +1,47 @@
-name: Weekly HR Bot
+name: Daily HR Strategic Brief
 
 on:
   schedule:
-    # GitHub Actions cron 지연(3~5시간) 보정: UTC 21:00 (KST 06:00) 설정 → 실제 KST 09시경 도착 목표
-    # 일~목(UTC) = 월~금(KST)
+    # 월~금 뉴스레터: GitHub Actions 지연(3~5시간) 보정
+    # UTC 21:00 일~목 = KST 06:00 월~금 → 실제 KST 09시경 도착 목표
     - cron: '0 21 * * 0-4'
-  
-  # 수동 실행 버튼 (비상용으로 남겨둠)
+
+    # 토요일 회사소식 요청 메일: UTC 21:00 금 = KST 06:00 토
+    - cron: '0 21 * * 5'
+
   workflow_dispatch:
+    inputs:
+      mode:
+        description: 'newsletter (기본) 또는 weekend_request'
+        required: false
+        default: 'newsletter'
 
 jobs:
   run-bot:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-python@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
-          python-version: '3.9'
-      - run: pip install feedparser requests
+          python-version: '3.11'
+      - run: pip install requests
       - env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
           NAVER_CLIENT_ID: ${{ secrets.NAVER_CLIENT_ID }}
           NAVER_CLIENT_SECRET: ${{ secrets.NAVER_CLIENT_SECRET }}
-        run: python newsletter_bot.py
+          RECIPIENT_EMAILS: ${{ secrets.RECIPIENT_EMAILS }}
+          # 요일에 따라 자동 모드 선택: 토요일(6)이면 weekend_request, 아니면 newsletter
+          # workflow_dispatch 수동 실행 시 입력값 우선
+          BOT_MODE: ${{ github.event.inputs.mode || '' }}
+        run: |
+          if [ -z "$BOT_MODE" ]; then
+            DOW=$(date -u +%u)
+            if [ "$DOW" = "6" ]; then
+              export BOT_MODE="weekend_request"
+            else
+              export BOT_MODE="newsletter"
+            fi
+          fi
+          echo "BOT_MODE=$BOT_MODE"
+          python newsletter_bot.py
