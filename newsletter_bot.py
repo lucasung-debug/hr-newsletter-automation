@@ -33,6 +33,7 @@ COMPANY_CONTEXT = """오뚜기라면(OTOKI RAMYON) — 식품제조업
 - HR 이슈: 주52시간제, 임금피크제, 교대근무 관리, 윤리경영/ESG, 산업안전"""
 
 SENDER_EMAIL = "proposition97@gmail.com"
+KST = datetime.timezone(datetime.timedelta(hours=9))
 
 # ============================================================
 # 1. 유틸리티 함수
@@ -463,12 +464,12 @@ def quality_gate(final_p1, final_p2, deep_report, p1_is_fallback, p2_is_fallback
 def send_admin_alert(app_password, warnings):
     """품질 경고 시 관리자에게 알림 메일 발송."""
     body = "HR Newsletter Quality Gate Warnings:\n\n" + "\n".join(warnings)
-    body += f"\n\nTimestamp: {datetime.datetime.now().isoformat()}"
+    body += f"\n\nTimestamp: {datetime.datetime.now(KST).isoformat()}"
 
     msg = MIMEMultipart()
     msg['From'] = f"HR Brief Bot <{SENDER_EMAIL}>"
     msg['To'] = SENDER_EMAIL
-    msg['Subject'] = f"[ALERT] Newsletter Quality Issue - {datetime.datetime.now().strftime('%Y-%m-%d')}"
+    msg['Subject'] = f"[ALERT] Newsletter Quality Issue - {datetime.datetime.now(KST).strftime('%Y-%m-%d')}"
     msg.attach(MIMEText(body, 'plain', 'utf-8'))
 
     try:
@@ -485,7 +486,7 @@ def send_admin_alert(app_password, warnings):
 # ============================================================
 def send_news_request_email(app_password):
     """토요일: 회사 소식 요청 메일을 개인메일로 발송."""
-    today = datetime.datetime.now().strftime("%Y-%m-%d")
+    today = datetime.datetime.now(KST).strftime("%Y-%m-%d")
     subject = f"[회사소식요청] {today}"
     body = f"""안녕하세요, 성명재입니다.
 
@@ -517,7 +518,7 @@ def check_company_news_reply(app_password):
         mail.select("INBOX")
 
         # 최근 7일 내 회신 검색
-        since_date = (datetime.datetime.now() - datetime.timedelta(days=7)).strftime("%d-%b-%Y")
+        since_date = (datetime.datetime.now(KST) - datetime.timedelta(days=7)).strftime("%d-%b-%Y")
         _, data = mail.search(None, f'(SINCE "{since_date}" SUBJECT "Re: [회사소식요청]")')
 
         if not data[0]:
@@ -720,7 +721,7 @@ def run_newsletter():
     app_password = os.environ.get('GMAIL_APP_PASSWORD')
     recipient_str = os.environ.get('RECIPIENT_EMAILS', 'tjdaudwo21@otokirm.com')
     recipients = [e.strip() for e in recipient_str.split(',') if e.strip()]
-    today = datetime.datetime.now().strftime("%Y년 %m월 %d일")
+    today = datetime.datetime.now(KST).strftime("%Y년 %m월 %d일")
 
     # Step 1: 뉴스 수집 (고정 키워드)
     logger.info("1. 뉴스 수집 중...")
