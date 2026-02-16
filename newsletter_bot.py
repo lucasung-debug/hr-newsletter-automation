@@ -114,10 +114,10 @@ def call_gemini(api_key, prompt, max_retries=3):
                         "maxOutputTokens": 4096
                     }
                 }),
-                timeout=90
+                timeout=120
             )
             if res.status_code == 429:
-                wait = 15 * (attempt + 1)
+                wait = 30 * (attempt + 1)
                 logger.warning(f"Gemini 429 rate limit (시도 {attempt + 1}), {wait}초 대기...")
                 time.sleep(wait)
                 last_error = "rate_limit"
@@ -178,6 +178,23 @@ KEYWORDS = {
 # ============================================================
 # 4. 관련도 사전 필터링
 # ============================================================
+EXCLUDE_PATTERNS = [
+    "금시세", "금값", "금가격", "금 선물",
+    "부동산", "아파트", "분양", "전세", "월세",
+    "주식", "코스피", "코스닥", "증시", "주가",
+    "암호화폐", "비트코인", "이더리움",
+    "반려동물", "반려견", "반려묘",
+    "연예", "드라마", "스포츠", "프로야구",
+    "날씨", "기상청",
+]
+
+
+def is_excluded(article):
+    """제목에 명백히 무관한 키워드가 있으면 True."""
+    title = article['title']
+    return any(pat in title for pat in EXCLUDE_PATTERNS)
+
+
 RELEVANCE_TERMS = {
     "MACRO": {
         "식품", "라면", "면류", "프리믹스", "원자재", "밀가루", "팜유", "대두",
@@ -195,17 +212,24 @@ RELEVANCE_TERMS = {
 
 
 def compute_relevance_score(article, category):
-    """제목+설명에서 관련 단어 출현 횟수 기반 0.0~1.0 점수."""
-    text = (article['title'] + " " + article['desc'])
+    """제목+설명에서 관련 단어 출현 횟수 기반 0.0~1.0 점수. 제목 매칭 가중치 2배."""
+    title = article['title']
+    desc = article['desc']
     terms = RELEVANCE_TERMS.get(category, set())
     if not terms:
         return 0.5
-    hits = sum(1 for t in terms if t in text)
-    return min(hits / 3.0, 1.0)
+    title_hits = sum(1 for t in terms if t in title)
+    desc_hits = sum(1 for t in terms if t in desc and t not in title)
+    return min((title_hits * 2 + desc_hits) / 6.0, 1.0)
 
 
-def filter_by_relevance(news_list, category, min_score=0.3):
-    """최소 점수 미만 기사 제거. 점수 내림차순 정렬."""
+def filter_by_relevance(news_list, category, min_score=0.4):
+    """최소 점수 미만 기사 제거. 네거티브 필터 후 점수 내림차순 정렬."""
+    before_exclude = len(news_list)
+    news_list = [n for n in news_list if not is_excluded(n)]
+    excluded = before_exclude - len(news_list)
+    if excluded:
+        logger.info(f"  네거티브 필터: {category} {excluded}건 제외")
     scored = [(n, compute_relevance_score(n, category)) for n in news_list]
     filtered = [(n, s) for n, s in scored if s >= min_score]
     filtered.sort(key=lambda x: x[1], reverse=True)
@@ -246,7 +270,7 @@ def fetch_news(category, keywords):
     for kw in keywords:
         try:
             resp = requests.get(url, headers=headers,
-                                params={"query": kw, "display": 5, "sort": "date"},
+                                params={"query": kw, "display": 10, "sort": "date"},
                                 timeout=10)
             if resp.status_code != 200:
                 continue
@@ -270,7 +294,7 @@ def fetch_news(category, keywords):
         except Exception:
             continue
 
-    return sorted(collected, key=lambda x: x['date'], reverse=True)[:5]
+    return sorted(collected, key=lambda x: x['date'], reverse=True)[:8]
 
 
 # ============================================================
