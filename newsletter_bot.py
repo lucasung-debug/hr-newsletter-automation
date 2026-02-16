@@ -7,9 +7,20 @@ import email as email_lib
 import os
 import re
 import time
+import logging
 from email.utils import parsedate_to_datetime
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+
+# ============================================================
+# 로깅 설정
+# ============================================================
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s [%(levelname)s] %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
+logger = logging.getLogger("hr_brief")
 
 # ============================================================
 # 회사 컨텍스트 (전역 상수)
@@ -84,64 +95,144 @@ def is_near_duplicate(new_title, seen_titles, threshold=0.4):
 
 
 # ============================================================
-# 2. Gemini API 호출 (재시도 포함)
+# 2. Gemini API 호출 (재시도 + 튜플 반환)
 # ============================================================
 def call_gemini(api_key, prompt, max_retries=3):
-    """Gemini API 호출. 최대 max_retries회 재시도. 성공 시 텍스트, 실패 시 None."""
+    """Gemini API 호출. 성공 시 (텍스트, None), 실패 시 (None, 에러유형)."""
     api_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={api_key}"
+    last_error = "unknown"
     for attempt in range(max_retries):
         try:
             res = requests.post(
                 api_url,
                 headers={'Content-Type': 'application/json'},
-                data=json.dumps({"contents": [{"parts": [{"text": prompt}]}]}),
-                timeout=60
+                data=json.dumps({
+                    "contents": [{"parts": [{"text": prompt}]}],
+                    "generationConfig": {
+                        "temperature": 0.2,
+                        "maxOutputTokens": 4096
+                    }
+                }),
+                timeout=90
             )
+            if res.status_code == 429:
+                wait = 15 * (attempt + 1)
+                logger.warning(f"Gemini 429 rate limit (시도 {attempt + 1}), {wait}초 대기...")
+                time.sleep(wait)
+                last_error = "rate_limit"
+                continue
             if res.status_code != 200:
-                print(f"  Gemini HTTP {res.status_code} (시도 {attempt + 1}): {res.text[:300]}")
-                time.sleep(5)
+                logger.error(f"Gemini HTTP {res.status_code} (시도 {attempt + 1}): {res.text[:300]}")
+                last_error = f"http_{res.status_code}"
+                time.sleep(5 * (attempt + 1))
                 continue
             body = res.json()
             candidates = body.get('candidates')
             if not candidates:
-                print(f"  Gemini candidates 없음 (시도 {attempt + 1}): {json.dumps(body, ensure_ascii=False)[:300]}")
+                block_reason = body.get('promptFeedback', {}).get('blockReason', '')
+                if block_reason:
+                    logger.error(f"Gemini 차단: {block_reason}")
+                    last_error = f"blocked_{block_reason}"
+                else:
+                    logger.warning(f"Gemini candidates 없음 (시도 {attempt + 1})")
+                    last_error = "no_candidates"
                 time.sleep(5)
                 continue
-            return candidates[0]['content']['parts'][0]['text']
+            return candidates[0]['content']['parts'][0]['text'], None
         except requests.exceptions.Timeout:
-            print(f"  Gemini 타임아웃 (시도 {attempt + 1})")
+            logger.error(f"Gemini 타임아웃 (시도 {attempt + 1})")
+            last_error = "timeout"
         except Exception as e:
-            print(f"  Gemini 오류 (시도 {attempt + 1}): {e}")
-        time.sleep(5)
-    return None
+            logger.error(f"Gemini 오류 (시도 {attempt + 1}): {e}")
+            last_error = str(e)
+        time.sleep(5 * (attempt + 1))
+    return None, last_error
 
 
 # ============================================================
-# 3. 고정 키워드
+# 3. 고정 키워드 (복합 검색어로 정밀도 향상)
 # ============================================================
 KEYWORDS = {
     "MACRO": [
-        "한국 경제 전망", "한국은행 기준금리", "원달러 환율 전망",
-        "글로벌 식품시장 동향", "원자재 가격 밀 팜유",
-        "식품 수출 관세", "소비자물가 동향",
+        "식품제조업 원가 원자재",
+        "라면 밀가루 팜유 가격",
+        "식품 수출 관세 규제",
+        "원달러 환율 식품",
+        "소비자물가 식료품",
+        "글로벌 식품기업 실적",
+        "식품산업 트렌드 전망",
     ],
     "HR": [
-        "주52시간제 제조업", "교대근무 정책", "임금피크제",
-        "고용노동부 제조업", "산업안전 식품",
-        "제조업 인력난 채용", "근로기준법 개정",
+        "제조업 주52시간 교대근무",
+        "식품제조 산업안전 중대재해",
+        "제조업 임금 인상 최저임금",
+        "고용노동부 제조업 근로감독",
+        "교대근무 야간근로 수당",
+        "제조업 인력난 외국인 근로자",
+        "근로기준법 개정 제조업",
     ],
 }
 
 
 # ============================================================
-# 4. 뉴스 수집 (Naver API)
+# 4. 관련도 사전 필터링
+# ============================================================
+RELEVANCE_TERMS = {
+    "MACRO": {
+        "식품", "라면", "면류", "프리믹스", "원자재", "밀가루", "팜유", "대두",
+        "원가", "수출", "관세", "환율", "물가", "소비자", "식료품", "제조",
+        "글로벌", "무역", "공급망", "인플레이션", "GDP", "경제성장",
+        "오뚜기", "농심", "삼양", "풀무원", "CJ", "식품업",
+    },
+    "HR": {
+        "근로", "노동", "임금", "교대", "주52시간", "산업안전", "중대재해",
+        "고용", "해고", "퇴직", "인사", "제조업", "공장", "생산직",
+        "야간", "수당", "최저임금", "임금피크", "정년", "노조", "단체교섭",
+        "근로기준법", "고용노동부", "근로감독", "외국인근로자", "인력난",
+    },
+}
+
+
+def compute_relevance_score(article, category):
+    """제목+설명에서 관련 단어 출현 횟수 기반 0.0~1.0 점수."""
+    text = (article['title'] + " " + article['desc'])
+    terms = RELEVANCE_TERMS.get(category, set())
+    if not terms:
+        return 0.5
+    hits = sum(1 for t in terms if t in text)
+    return min(hits / 3.0, 1.0)
+
+
+def filter_by_relevance(news_list, category, min_score=0.3):
+    """최소 점수 미만 기사 제거. 점수 내림차순 정렬."""
+    scored = [(n, compute_relevance_score(n, category)) for n in news_list]
+    filtered = [(n, s) for n, s in scored if s >= min_score]
+    filtered.sort(key=lambda x: x[1], reverse=True)
+    removed = len(news_list) - len(filtered)
+    if removed:
+        logger.info(f"  관련도 필터: {category} {removed}건 제거 (총 {len(filtered)}건 유지)")
+    return [n for n, s in filtered]
+
+
+def dedup_across_categories(macro_news, hr_news):
+    """HR 뉴스에서 MACRO와 중복되는 기사 제거. MACRO 우선."""
+    macro_titles = [n['title'] for n in macro_news]
+    deduped_hr = [n for n in hr_news if not is_near_duplicate(n['title'], macro_titles)]
+    removed = len(hr_news) - len(deduped_hr)
+    if removed:
+        logger.info(f"  교차 카테고리 중복 제거: {removed}건 (HR에서 제거)")
+    return macro_news, deduped_hr
+
+
+# ============================================================
+# 5. 뉴스 수집 (Naver API)
 # ============================================================
 def fetch_news(category, keywords):
     """Naver 뉴스 검색 API로 뉴스 수집. 중복 제거 포함."""
     client_id = os.environ.get('NAVER_CLIENT_ID')
     client_secret = os.environ.get('NAVER_CLIENT_SECRET')
     if not client_id or not client_secret:
-        print(f"  Naver API 키 미설정 ({category})")
+        logger.warning(f"Naver API 키 미설정 ({category})")
         return []
 
     url = "https://openapi.naver.com/v1/search/news.json"
@@ -182,16 +273,16 @@ def fetch_news(category, keywords):
 
 
 # ============================================================
-# 5. AI 뉴스 분석 (4단계 전략 브리핑 — 파트별 분할 호출)
+# 6. AI 뉴스 분석 (4단계 전략 브리핑 — 파트별 분할 호출)
 # ============================================================
 def analyze_part(api_key, news_list, part_type):
     """단일 파트(MACRO 또는 HR)의 뉴스를 Gemini로 4단계 분석.
 
     part_type: "MACRO" 또는 "HR"
-    반환: 분석된 기사 리스트 (0~3개)
+    반환: (분석된 기사 리스트, error_type 또는 None)
     """
     if not news_list:
-        return []
+        return [], None
 
     ctx = ""
     for i, n in enumerate(news_list):
@@ -202,7 +293,7 @@ def analyze_part(api_key, news_list, part_type):
         selection_rule = "거시경제 환경, 글로벌 식품·원자재 시장 트렌드, 수출 규제 변화 등 식품제조기업 경영에 영향을 주는 뉴스만 선정하세요. 특정 기업의 신제품·마케팅·CSR 뉴스는 제외하세요."
     else:
         part_desc = "인사노무·컴플라이언스"
-        selection_rule = "근로시간(주52시간), 교대근무, 임금피크제, 산업안전, 고용정책 등 식품제조업 HR에 직접 영향을 주는 뉴스만 선정하세요. 식품제조업과 무관한 업종(병원, IT, 서비스업, 지자체)의 기사는 반드시 제외하세요."
+        selection_rule = "근로시간(주52시간), 교대근무, 임금피크제, 산업안전, 고용정책 등 식품제조업 HR에 직접 영향을 주는 뉴스만 선정하세요. 식품제조업과 무관한 업종(병원, IT, 서비스업, 지자체, 반려동물, 부동산)의 기사는 반드시 제외하세요."
 
     prompt = f"""당신은 오뚜기라면(OTOKI RAMYON) 인사팀 소속 HR 전략 애널리스트입니다.
 
@@ -225,23 +316,28 @@ def analyze_part(api_key, news_list, part_type):
 - business_impact: 오뚜기라면 관점의 사업 영향 (식품제조, 교대근무, 수출 관점)
 - recommended_actions: 즉시 검토 가능한 실행항목 2~3개 (측정지표 포함)
 
-반드시 아래 JSON만 출력하세요.
+[중요 규칙]
+1. 반드시 아래 JSON 형식만 출력하세요. 다른 텍스트, 설명, 마크다운은 절대 포함하지 마세요.
+2. 관련 뉴스가 없으면 정확히 {{"articles": []}} 만 출력하세요.
+3. ref_id는 반드시 정수여야 합니다.
+4. 각 분석 항목(fact, strategic_meaning, business_impact)은 반드시 2문장 이상이어야 합니다.
+
 {{"articles": [{{"headline": "...", "fact": "...", "strategic_meaning": "...", "business_impact": "...", "recommended_actions": ["...", "..."], "ref_id": 0}}]}}
 
 뉴스 후보:
 {ctx}"""
 
     label = "MACRO" if part_type == "MACRO" else "HR"
-    print(f"  AI 분석 중 ({label})...")
-    raw = call_gemini(api_key, prompt)
+    logger.info(f"AI 분석 중 ({label})...")
+    raw, err = call_gemini(api_key, prompt)
     if not raw:
-        print(f"  Gemini 응답 없음 (analyze_{label})")
-        return []
+        logger.error(f"Gemini 응답 없음 (analyze_{label}): {err}")
+        return [], err
 
     parsed = extract_json_from_text(raw)
     if not parsed or not isinstance(parsed.get('articles'), list):
-        print(f"  JSON 구조 불일치 ({label}) — raw 앞 300자: {raw[:300]}")
-        return []
+        logger.error(f"JSON 구조 불일치 ({label}) — raw 앞 300자: {raw[:300]}")
+        return [], "json_parse_error"
 
     result = []
     for item in parsed['articles']:
@@ -253,28 +349,49 @@ def analyze_part(api_key, news_list, part_type):
             item.update({'link': n['link'], 'date': n['date']})
             result.append(item)
 
-    print(f"  {label} 분석 완료: {len(result)}건")
-    return result
-
-
-def make_fallback(news_list, prefix="M"):
-    """AI 실패 시 원본 뉴스를 4단계 구조로 변환."""
-    result = []
-    for n in news_list[:3]:
-        result.append({
-            "headline": n['title'],
-            "fact": n['desc'],
-            "strategic_meaning": "AI 분석 미제공 — 원문 기사를 직접 확인하세요.",
-            "business_impact": "원문 기사를 통해 자체 영향도를 평가하시기 바랍니다.",
-            "recommended_actions": ["원문 기사 검토 후 관련 부서 공유"],
-            "link": n['link'],
-            "date": n['date']
-        })
-    return result
+    logger.info(f"{label} 분석 완료: {len(result)}건")
+    return result, None
 
 
 # ============================================================
-# 6. AI 심층 리포트 (PART 3)
+# 7. 스마트 폴백 (AI 실패 시 관련도 기반 필터링)
+# ============================================================
+def make_smart_fallback(news_list, category, error_type=None):
+    """AI 실패 시 3단계 폴백.
+
+    Tier 1: 높은 관련도(0.6) 기사만 최대 2개 포함 (안내 메시지 포함)
+    Tier 2: 관련 기사 없으면 빈 리스트 → HTML에서 "뉴스 없음" 표시
+
+    반환: (articles_list, is_fallback: bool)
+    """
+    if not news_list:
+        return [], True
+
+    # Tier 1: 높은 관련도 기준으로 재필터링
+    high_relevance = filter_by_relevance(news_list, category, min_score=0.6)
+
+    if high_relevance:
+        result = []
+        for n in high_relevance[:2]:
+            result.append({
+                "headline": n['title'],
+                "fact": n['desc'],
+                "strategic_meaning": "AI 분석이 일시적으로 제공되지 않았습니다. 아래는 관련도가 높은 기사의 원문 요약입니다.",
+                "business_impact": "원문 기사를 통해 자체 영향도를 평가하시기 바랍니다.",
+                "recommended_actions": ["원문 기사 확인 후 관련 부서 공유"],
+                "link": n['link'],
+                "date": n['date']
+            })
+        logger.info(f"스마트 폴백 ({category}): Tier 1 — {len(result)}건 (관련도 0.6 이상)")
+        return result, True
+
+    # Tier 2: 관련 기사 없음
+    logger.info(f"스마트 폴백 ({category}): Tier 2 — 관련 기사 없음, 빈 리스트 반환")
+    return [], True
+
+
+# ============================================================
+# 8. AI 심층 리포트 (PART 3)
 # ============================================================
 def generate_deep_report(api_key, all_news_ctx):
     """BCG/골드만삭스 수준의 전략 심층 분석 아티클 생성."""
@@ -295,27 +412,76 @@ def generate_deep_report(api_key, all_news_ctx):
 - 글로벌 사례(미국, 유럽, 일본, 동남아 등)와 국내 현실을 대비하여 분석
 - 단락 구분은 \\n\\n 으로 처리
 
-반드시 아래 JSON만 출력하세요.
+반드시 아래 JSON만 출력하세요. 다른 텍스트는 절대 포함하지 마세요.
 {{"topic": "아티클 제목", "content": "본문 텍스트"}}
 
 뉴스 데이터 (거시경제 + 인사노무 통합):
 {all_news_ctx}"""
 
-    print("4. AI 심층 리포트 생성 중...")
-    raw = call_gemini(api_key, prompt)
+    logger.info("AI 심층 리포트 생성 중...")
+    raw, err = call_gemini(api_key, prompt)
     if raw:
         parsed = extract_json_from_text(raw)
         if parsed and parsed.get('topic') and parsed.get('content'):
-            print(f"  리포트 생성 완료: {parsed['topic']}")
+            logger.info(f"리포트 생성 완료: {parsed['topic']}")
             return parsed
-        print(f"  리포트 JSON 파싱 실패 — raw 앞 300자: {raw[:300]}")
+        logger.error(f"리포트 JSON 파싱 실패 — raw 앞 300자: {raw[:300]}")
     else:
-        print("  Gemini 응답 없음 (generate_deep_report)")
+        logger.error(f"Gemini 응답 없음 (generate_deep_report): {err}")
     return None
 
 
 # ============================================================
-# 7. 회사 소식 (IMAP 회신 확인 / 토요일 요청)
+# 9. 품질 게이트 + 관리자 알림
+# ============================================================
+def quality_gate(final_p1, final_p2, deep_report, p1_is_fallback, p2_is_fallback):
+    """발송 전 품질 검증. (should_send, edition_type, warnings) 반환."""
+    warnings = []
+
+    has_real_p1 = bool(final_p1) and not p1_is_fallback
+    has_real_p2 = bool(final_p2) and not p2_is_fallback
+    has_report = bool(deep_report)
+
+    real_sections = sum([has_real_p1, has_real_p2, has_report])
+
+    if real_sections >= 2:
+        return True, "full", warnings
+
+    if real_sections == 1:
+        warnings.append("WARNING: AI 분석 3개 섹션 중 1개만 성공")
+        return True, "full", warnings
+
+    # real_sections == 0
+    if final_p1 or final_p2:
+        warnings.append("CRITICAL: AI 분석 전면 실패. Light 에디션으로 발송합니다.")
+        return True, "light", warnings
+
+    warnings.append("CRITICAL: 콘텐츠 없음. 발송 중단.")
+    return False, "skip", warnings
+
+
+def send_admin_alert(app_password, warnings):
+    """품질 경고 시 관리자에게 알림 메일 발송."""
+    body = "HR Newsletter Quality Gate Warnings:\n\n" + "\n".join(warnings)
+    body += f"\n\nTimestamp: {datetime.datetime.now().isoformat()}"
+
+    msg = MIMEMultipart()
+    msg['From'] = f"HR Brief Bot <{SENDER_EMAIL}>"
+    msg['To'] = SENDER_EMAIL
+    msg['Subject'] = f"[ALERT] Newsletter Quality Issue - {datetime.datetime.now().strftime('%Y-%m-%d')}"
+    msg.attach(MIMEText(body, 'plain', 'utf-8'))
+
+    try:
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+            server.login(SENDER_EMAIL, app_password)
+            server.sendmail(SENDER_EMAIL, SENDER_EMAIL, msg.as_string())
+        logger.info("관리자 알림 발송 완료")
+    except Exception as e:
+        logger.error(f"관리자 알림 발송 실패: {e}")
+
+
+# ============================================================
+# 10. 회사 소식 (IMAP 회신 확인 / 토요일 요청)
 # ============================================================
 def send_news_request_email(app_password):
     """토요일: 회사 소식 요청 메일을 개인메일로 발송."""
@@ -340,7 +506,7 @@ Daily HR Strategic Brief 자동 발송 시스템
     with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
         server.login(SENDER_EMAIL, app_password)
         server.sendmail(SENDER_EMAIL, SENDER_EMAIL, msg.as_string())
-    print(f"토요일 회사소식 요청 메일 발송 완료: {subject}")
+    logger.info(f"토요일 회사소식 요청 메일 발송 완료: {subject}")
 
 
 def check_company_news_reply(app_password):
@@ -389,7 +555,7 @@ def check_company_news_reply(app_password):
             return clean_body
         return None
     except Exception as e:
-        print(f"  IMAP 확인 실패: {e}")
+        logger.error(f"IMAP 확인 실패: {e}")
         return None
 
 
@@ -425,7 +591,7 @@ def fetch_company_fallback_news():
 
 
 # ============================================================
-# 8. HTML 생성 (미니멀 리포트 스타일)
+# 11. HTML 생성 (미니멀 리포트 스타일)
 # ============================================================
 def build_html(today, final_p1, final_p2, deep_report, company_section_html):
     """텍스트 중심 미니멀 리포트 HTML 생성."""
@@ -528,7 +694,7 @@ def build_html(today, final_p1, final_p2, deep_report, company_section_html):
 
 
 # ============================================================
-# 9. 이메일 발송 (복수 수신 지원)
+# 12. 이메일 발송 (복수 수신 지원)
 # ============================================================
 def send_email(app_password, recipients, subject, html):
     """Gmail SMTP로 이메일 발송."""
@@ -542,11 +708,11 @@ def send_email(app_password, recipients, subject, html):
         with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
             server.login(SENDER_EMAIL, app_password)
             server.sendmail(SENDER_EMAIL, recipient, msg.as_string())
-        print(f"  발송 완료: {recipient}")
+        logger.info(f"발송 완료: {recipient}")
 
 
 # ============================================================
-# 10. 메인 실행
+# 13. 메인 실행
 # ============================================================
 def run_newsletter():
     """월~금 뉴스레터 메인 실행."""
@@ -557,27 +723,38 @@ def run_newsletter():
     today = datetime.datetime.now().strftime("%Y년 %m월 %d일")
 
     # Step 1: 뉴스 수집 (고정 키워드)
-    print("1. 뉴스 수집 중...")
+    logger.info("1. 뉴스 수집 중...")
     macro_news = fetch_news("MACRO", KEYWORDS["MACRO"])
     hr_news = fetch_news("HR", KEYWORDS["HR"])
-    print(f"  수집 완료: MACRO {len(macro_news)}건, HR {len(hr_news)}건")
+    logger.info(f"수집 완료: MACRO {len(macro_news)}건, HR {len(hr_news)}건")
 
-    # Step 2: AI 분석 PART 1 (거시경제)
-    print("2. AI 분석 시작...")
-    final_p1 = analyze_part(api_key, macro_news, "MACRO") if macro_news else []
+    # Step 2: 관련도 필터링
+    logger.info("2. 관련도 필터링...")
+    macro_news = filter_by_relevance(macro_news, "MACRO")
+    hr_news = filter_by_relevance(hr_news, "HR")
+
+    # Step 3: 교차 카테고리 중복 제거
+    macro_news, hr_news = dedup_across_categories(macro_news, hr_news)
+    logger.info(f"필터 후: MACRO {len(macro_news)}건, HR {len(hr_news)}건")
+
+    # Step 4: AI 분석 PART 1 (거시경제)
+    logger.info("3. AI 분석 시작...")
+    final_p1, p1_err = analyze_part(api_key, macro_news, "MACRO") if macro_news else ([], None)
+    p1_is_fallback = False
     if not final_p1:
-        final_p1 = make_fallback(macro_news, "M")
+        final_p1, p1_is_fallback = make_smart_fallback(macro_news, "MACRO", p1_err)
 
-    # Step 3: AI 분석 PART 2 (HR) — 3초 딜레이
+    # Step 5: AI 분석 PART 2 (HR) — 3초 딜레이
     if macro_news:
         time.sleep(3)
-    final_p2 = analyze_part(api_key, hr_news, "HR") if hr_news else []
+    final_p2, p2_err = analyze_part(api_key, hr_news, "HR") if hr_news else ([], None)
+    p2_is_fallback = False
     if not final_p2:
-        final_p2 = make_fallback(hr_news, "H")
+        final_p2, p2_is_fallback = make_smart_fallback(hr_news, "HR", p2_err)
 
-    # Step 4: 심층 리포트 — 5초 딜레이
+    # Step 6: 심층 리포트 — 5초 딜레이
     if macro_news or hr_news:
-        print("  Gemini rate limit 보호: 5초 대기...")
+        logger.info("Gemini rate limit 보호: 5초 대기...")
         time.sleep(5)
     all_ctx = "--- 거시경제·글로벌 식품시장 ---\n"
     for i, n in enumerate(macro_news):
@@ -587,14 +764,30 @@ def run_newsletter():
         all_ctx += f"[H-{i}] {n['title']} | {n['desc']}\n"
     deep_report = generate_deep_report(api_key, all_ctx) if (macro_news or hr_news) else None
 
-    # Step 5: 회사 소식
-    print("5. 회사 소식 확인 중...")
+    # Step 7: 품질 게이트
+    logger.info("4. 품질 게이트 검증...")
+    should_send, edition_type, warnings = quality_gate(
+        final_p1, final_p2, deep_report, p1_is_fallback, p2_is_fallback
+    )
+    for w in warnings:
+        logger.warning(w)
+
+    if not should_send:
+        send_admin_alert(app_password, warnings)
+        logger.warning("뉴스레터 발송 중단 (품질 게이트)")
+        return
+
+    if edition_type == "light":
+        send_admin_alert(app_password, warnings)
+
+    # Step 8: 회사 소식
+    logger.info("5. 회사 소식 확인 중...")
     company_reply = check_company_news_reply(app_password)
     if company_reply:
-        print("  회신 발견 → 회사 소식 삽입")
+        logger.info("회신 발견 → 회사 소식 삽입")
         company_html = f'<div style="font-size:14px;color:#333;line-height:1.8;">{company_reply.replace(chr(10), "<br>")}</div>'
     else:
-        print("  회신 없음 → 오뚜기 신제품 뉴스 검색")
+        logger.info("회신 없음 → 오뚜기 신제품 뉴스 검색")
         fallback_news = fetch_company_fallback_news()
         if fallback_news:
             items_html = ""
@@ -607,12 +800,23 @@ def run_newsletter():
         else:
             company_html = '<p style="color:#999;font-size:13px;">금일 회사 소식이 없습니다.</p>'
 
-    # Step 6: HTML 생성 & 발송
-    print("6. HTML 생성 & 발송...")
+    # Step 9: HTML 생성 & 발송
+    logger.info("6. HTML 생성 & 발송...")
     html = build_html(today, final_p1, final_p2, deep_report, company_html)
-    subject = f"[{today}] Daily HR Strategic Brief - 오뚜기라면"
+    if edition_type == "light":
+        subject = f"[{today}] Daily HR Brief (Light) - 오뚜기라면"
+    else:
+        subject = f"[{today}] Daily HR Strategic Brief - 오뚜기라면"
     send_email(app_password, recipients, subject, html)
-    print("✅ 뉴스레터 발송 완료")
+
+    # 실행 요약 로그
+    logger.info("=== Newsletter Summary ===")
+    logger.info(f"  MACRO: {len(macro_news)} fetched → {len(final_p1)} in newsletter (fallback={p1_is_fallback})")
+    logger.info(f"  HR: {len(hr_news)} fetched → {len(final_p2)} in newsletter (fallback={p2_is_fallback})")
+    logger.info(f"  Deep report: {'생성됨' if deep_report else '실패'}")
+    logger.info(f"  Edition: {edition_type}")
+    logger.info(f"  Warnings: {warnings if warnings else 'none'}")
+    logger.info("뉴스레터 발송 완료")
 
 
 def run_weekend_request():
