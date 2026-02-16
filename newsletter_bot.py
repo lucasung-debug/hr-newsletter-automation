@@ -356,8 +356,23 @@ def analyze_part(api_key, news_list, part_type):
     logger.info(f"AI 분석 중 ({label})...")
     raw, err = call_gemini(api_key, prompt)
     if not raw:
-        logger.error(f"Gemini 응답 없음 (analyze_{label}): {err}")
-        return [], err
+        logger.warning(f"Gemini 1차 실패 ({label}): {err} — 간소화 프롬프트로 재시도")
+        time.sleep(10)
+        simple_ctx = "\n".join(f"[{i}] {n['title']} | {n['desc']}" for i, n in enumerate(news_list[:2]))
+        simple_prompt = f"""오뚜기라면 HR 전략 애널리스트입니다. 아래 뉴스를 분석하세요.
+
+[회사 컨텍스트]
+{COMPANY_CONTEXT}
+
+JSON만 출력하세요:
+{{"articles": [{{"headline": "기사 제목", "fact": "핵심 사실 2~3문장", "strategic_meaning": "전략적 의미", "business_impact": "오뚜기라면 사업 영향", "recommended_actions": ["실행항목1", "실행항목2"], "ref_id": 0}}]}}
+
+뉴스:
+{simple_ctx}"""
+        raw, err = call_gemini(api_key, simple_prompt)
+        if not raw:
+            logger.error(f"Gemini 2차 실패 ({label}): {err}")
+            return [], err
 
     parsed = extract_json_from_text(raw)
     if not parsed or not isinstance(parsed.get('articles'), list):
@@ -384,7 +399,7 @@ def analyze_part(api_key, news_list, part_type):
 def make_smart_fallback(news_list, category, error_type=None):
     """AI 실패 시 3단계 폴백.
 
-    Tier 1: 높은 관련도(0.6) 기사만 최대 2개 포함 (안내 메시지 포함)
+    Tier 1: 높은 관련도(0.5) 기사만 최대 2개 포함 (카테고리별 안내 메시지)
     Tier 2: 관련 기사 없으면 빈 리스트 → HTML에서 "뉴스 없음" 표시
 
     반환: (articles_list, is_fallback: bool)
@@ -393,21 +408,22 @@ def make_smart_fallback(news_list, category, error_type=None):
         return [], True
 
     # Tier 1: 높은 관련도 기준으로 재필터링
-    high_relevance = filter_by_relevance(news_list, category, min_score=0.6)
+    high_relevance = filter_by_relevance(news_list, category, min_score=0.5)
 
     if high_relevance:
+        context_label = "원자재·환율 등 거시경제 관점" if category == "MACRO" else "인사노무·컴플라이언스 관점"
         result = []
         for n in high_relevance[:2]:
             result.append({
                 "headline": n['title'],
                 "fact": n['desc'],
-                "strategic_meaning": "AI 분석이 일시적으로 제공되지 않았습니다. 아래는 관련도가 높은 기사의 원문 요약입니다.",
-                "business_impact": "원문 기사를 통해 자체 영향도를 평가하시기 바랍니다.",
-                "recommended_actions": ["원문 기사 확인 후 관련 부서 공유"],
+                "strategic_meaning": f"{context_label}에서 원문 확인이 필요합니다.",
+                "business_impact": "오뚜기라면 사업 영향도는 원문 기사를 통해 평가하시기 바랍니다.",
+                "recommended_actions": ["원문 기사 확인 후 영향도 평가", "관련 부서(경영기획/인사팀)에 공유 검토"],
                 "link": n['link'],
                 "date": n['date']
             })
-        logger.info(f"스마트 폴백 ({category}): Tier 1 — {len(result)}건 (관련도 0.6 이상)")
+        logger.info(f"스마트 폴백 ({category}): Tier 1 — {len(result)}건 (관련도 0.5 이상)")
         return result, True
 
     # Tier 2: 관련 기사 없음
@@ -419,22 +435,28 @@ def make_smart_fallback(news_list, category, error_type=None):
 # 8. AI 심층 리포트 (PART 3)
 # ============================================================
 def generate_deep_report(api_key, all_news_ctx):
-    """BCG/골드만삭스 수준의 전략 심층 분석 아티클 생성."""
-    prompt = f"""당신은 BCG, 골드만삭스, 맥킨지 수준의 시니어 전략 컨설턴트입니다.
+    """오늘 뉴스 기반 심층 분석 아티클 생성. 환각 방지를 위해 뉴스 근거만 사용."""
+    prompt = f"""당신은 오뚜기라면 인사팀 소속 HR 전략 애널리스트입니다.
 
 [회사 컨텍스트]
 {COMPANY_CONTEXT}
 
-아래 거시경제·식품산업·노동시장 뉴스 데이터를 종합 분석하여,
-**노동시장 × 대한민국 식품시장 × 세계 식품시장**을 관통하는
-하나의 핵심 주제를 도출하고 심층 분석 아티클을 작성하세요.
+아래 오늘의 뉴스 데이터를 종합 분석하여 하나의 핵심 인사이트를 도출하세요.
+
+[필수 규칙]
+1. 반드시 아래 뉴스에 언급된 사실만 근거로 사용하세요.
+2. 뉴스에 없는 기업 사례, 통계, 수치를 만들어내지 마세요.
+3. "네슬레는...", "다논은..." 등 오늘 뉴스에 없는 외부 기업 사례 인용을 금지합니다.
+4. 대신 오늘 뉴스의 구체적 내용을 인용하세요. (예: "오늘 보도에 따르면...")
+
+[구조]
+- 도입: 오늘 뉴스에서 포착된 핵심 이슈 1개 (2~3문장)
+- 분석: 이 이슈가 식품제조업 HR에 미치는 영향 (2~3단락, 뉴스 근거 인용)
+- 시사점: 오뚜기라면 관점의 구체적 제언 (2~3개 항목)
 
 [작성 규칙]
-- 구조: 도입(이슈 제기, 핵심 논점 2~3문장) → 본론(글로벌 벤치마크 사례, 산업 데이터, 메가트렌드를 인용한 분석 3~4단락) → 시사점(오뚜기라면의 식품제조·교대근무·수출 관점에서의 전략적 제언)
-- 분량: 1000~1500자
-- 톤: BCG/골드만삭스 전략 리포트 (수식어 배제, 데이터·논리·구조적 사고 중심)
-- 단일 HR 이슈가 아닌, 거시경제와 노동시장·식품산업이 교차하는 구조적 인사이트 도출
-- 글로벌 사례(미국, 유럽, 일본, 동남아 등)와 국내 현실을 대비하여 분석
+- 분량: 500~800자 (간결하게)
+- 톤: 보고서 형식, 경어체, 수식어 배제
 - 단락 구분은 \\n\\n 으로 처리
 
 반드시 아래 JSON만 출력하세요. 다른 텍스트는 절대 포함하지 마세요.
@@ -771,23 +793,27 @@ def run_newsletter():
 
     # Step 5: AI 분석 PART 2 (HR) — 3초 딜레이
     if macro_news:
-        time.sleep(3)
+        time.sleep(8)
     final_p2, p2_err = analyze_part(api_key, hr_news, "HR") if hr_news else ([], None)
     p2_is_fallback = False
     if not final_p2:
         final_p2, p2_is_fallback = make_smart_fallback(hr_news, "HR", p2_err)
 
-    # Step 6: 심층 리포트 — 5초 딜레이
-    if macro_news or hr_news:
-        logger.info("Gemini rate limit 보호: 5초 대기...")
-        time.sleep(5)
-    all_ctx = "--- 거시경제·글로벌 식품시장 ---\n"
-    for i, n in enumerate(macro_news):
-        all_ctx += f"[M-{i}] {n['title']} | {n['desc']}\n"
-    all_ctx += "\n--- 인사노무·컴플라이언스 ---\n"
-    for i, n in enumerate(hr_news):
-        all_ctx += f"[H-{i}] {n['title']} | {n['desc']}\n"
-    deep_report = generate_deep_report(api_key, all_ctx) if (macro_news or hr_news) else None
+    # Step 6: 심층 리포트 — 기사 3건 이상일 때만 생성
+    total_real_articles = len(macro_news) + len(hr_news)
+    if total_real_articles >= 3:
+        logger.info("Gemini rate limit 보호: 10초 대기...")
+        time.sleep(10)
+        all_ctx = "--- 거시경제·글로벌 식품시장 ---\n"
+        for i, n in enumerate(macro_news):
+            all_ctx += f"[M-{i}] {n['title']} | {n['desc']}\n"
+        all_ctx += "\n--- 인사노무·컴플라이언스 ---\n"
+        for i, n in enumerate(hr_news):
+            all_ctx += f"[H-{i}] {n['title']} | {n['desc']}\n"
+        deep_report = generate_deep_report(api_key, all_ctx)
+    else:
+        logger.info(f"심층 리포트 스킵: 기사 {total_real_articles}건 (최소 3건 필요)")
+        deep_report = None
 
     # Step 7: 품질 게이트
     logger.info("4. 품질 게이트 검증...")
