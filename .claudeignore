@@ -1,0 +1,14 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Secrets
+.env
+*.env
+
+# Git internals
+.git/
+
+# Logs
+*.log
