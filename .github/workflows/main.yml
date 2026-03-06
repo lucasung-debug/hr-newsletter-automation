@@ -1,12 +1,12 @@
-name: Daily HR Strategic Brief
+name: Weekly HR Strategic Intelligence
 
 on:
   schedule:
-    # 월~금 뉴스레터: GitHub Actions 지연(3~5시간) 보정
-    # UTC 21:00 일~목 = KST 06:00 월~금 → 실제 KST 09시경 도착 목표
-    - cron: '0 21 * * 0-4'
+    # 매주 수요일 뉴스레터: UTC 화요일 23:00 = KST 수요일 08:00
+    # GitHub Actions 지연(1~2시간) 보정 → 실제 KST 수요일 09:00~10:00 도착
+    - cron: '0 23 * * 2'
 
-    # 토요일 회사소식 요청 메일: UTC 21:00 금 = KST 06:00 토
+    # 토요일 회사소식 요청 메일: UTC 21:00 금 = KST 06:00 토 (유지)
     - cron: '0 21 * * 5'
 
   workflow_dispatch:
@@ -24,7 +24,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - run: pip install requests
+      - run: pip install requests feedparser
       - env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
