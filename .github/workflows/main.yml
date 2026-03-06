@@ -34,6 +34,7 @@ jobs:
           # 요일에 따라 자동 모드 선택: 토요일(6)이면 weekend_request, 아니면 newsletter
           # workflow_dispatch 수동 실행 시 입력값 우선
           BOT_MODE: ${{ github.event.inputs.mode || '' }}
+          GEMINI_DEEP_MODEL: gemini-3-flash-preview
         run: |
           if [ -z "$BOT_MODE" ]; then
             DOW=$(date -u +%u)
