@@ -172,7 +172,10 @@ function renderList(reports) {
   const el = document.getElementById('report-list');
   document.getElementById('result-count').textContent = `${reports.length}개 리포트`;
   if (!reports.length) {
-    el.innerHTML = '<div class="empty-state"><p>조건에 맞는 리포트가 없습니다.</p></div>';
+    const msg = allReports.length
+      ? '<div class="empty-state"><p>조건에 맞는 리포트가 없습니다.</p></div>'
+      : '<div class="empty-state"><p>아직 리포트가 없습니다.</p><small>GitHub Actions가 처음 실행되면 자동으로 표시됩니다.</small></div>';
+    el.innerHTML = msg;
     return;
   }
   el.innerHTML = reports.map((r, idx) => {
