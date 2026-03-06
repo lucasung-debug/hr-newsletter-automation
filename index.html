@@ -6,250 +6,303 @@
   <title>HR Intelligence Archive — 성명재</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', sans-serif; background: #fff; color: #1a1d3a; line-height: 1.6; }
+    :root {
+      --navy: #2d3068; --indigo: #6c6ff5; --indigo-light: #eef0ff;
+      --green: #15803d; --green-light: #ecfdf5;
+      --orange: #c2410c; --orange-light: #fff7ed;
+      --purple: #7c3aed; --purple-light: #f5f3ff;
+      --gray-50: #f8f9ff; --gray-100: #f1f3f9; --gray-200: #e5e7eb;
+      --gray-400: #9ca3af; --gray-600: #4b5563; --gray-700: #374151;
+      --text: #1a1d3a;
+      --radius-card: 20px; --radius-sm: 10px;
+    }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', sans-serif; background: #fff; color: var(--text); line-height: 1.65; font-size: 14px; }
+    a { color: inherit; }
 
-    /* ── NAV ── */
-    nav { display: flex; align-items: center; justify-content: space-between; padding: 20px 60px; background: #fff; border-bottom: 1px solid #f0f0f8; }
-    .nav-logo { font-size: 18px; font-weight: 800; color: #2d3068; letter-spacing: -0.5px; }
-    .nav-logo span { color: #6c6ff5; }
-    .nav-links { display: flex; gap: 32px; }
-    .nav-links a { text-decoration: none; font-size: 13px; color: #6b7280; font-weight: 500; transition: color 0.15s; }
-    .nav-links a:hover { color: #2d3068; }
-    .nav-cta { background: #2d3068; color: #fff; text-decoration: none; font-size: 13px; font-weight: 600; padding: 9px 20px; border-radius: 50px; transition: background 0.15s; }
+    /* ─── NAV ─── */
+    nav { display: flex; align-items: center; justify-content: space-between; padding: 18px 60px; background: #fff; border-bottom: 1px solid var(--gray-200); position: sticky; top: 0; z-index: 200; }
+    .nav-logo { font-size: 18px; font-weight: 900; color: var(--navy); letter-spacing: -0.5px; }
+    .nav-logo span { color: var(--indigo); }
+    .nav-links { display: flex; gap: 28px; }
+    .nav-links a { text-decoration: none; font-size: 13px; color: var(--gray-400); font-weight: 500; transition: color 0.15s; }
+    .nav-links a:hover { color: var(--navy); }
+    .nav-cta { background: var(--navy); color: #fff; text-decoration: none; font-size: 13px; font-weight: 700; padding: 9px 20px; border-radius: 50px; transition: background 0.15s; white-space: nowrap; }
     .nav-cta:hover { background: #3d42a0; }
 
-    /* ── HERO ── */
-    .hero { padding: 80px 60px 60px; max-width: 1200px; margin: 0 auto; display: grid; grid-template-columns: 1fr 1fr; gap: 60px; align-items: center; }
-    .hero-text h1 { font-size: 48px; font-weight: 900; line-height: 1.15; color: #1a1d3a; letter-spacing: -1.5px; margin-bottom: 18px; }
-    .hero-text h1 em { font-style: normal; color: #6c6ff5; }
-    .hero-text p { font-size: 15px; color: #6b7280; max-width: 380px; margin-bottom: 32px; line-height: 1.7; }
-    .hero-actions { display: flex; align-items: center; gap: 14px; }
-    .btn-primary { background: #2d3068; color: #fff; border: none; font-size: 14px; font-weight: 600; padding: 12px 28px; border-radius: 50px; cursor: pointer; text-decoration: none; transition: background 0.15s; }
-    .btn-primary:hover { background: #3d42a0; }
-    .btn-dot { width: 44px; height: 44px; border-radius: 50%; background: #6c6ff5; border: none; cursor: pointer; display: flex; align-items: center; justify-content: center; color: #fff; font-size: 18px; transition: background 0.15s; }
-    .btn-dot:hover { background: #5558e0; }
-    .hero-visual { background: linear-gradient(135deg, #eef0ff 0%, #e8eaff 100%); border-radius: 24px; padding: 40px; min-height: 280px; display: flex; align-items: center; justify-content: center; position: relative; overflow: hidden; }
-    .hero-visual::before { content: ''; position: absolute; width: 200px; height: 200px; border-radius: 50%; background: rgba(108,111,245,0.12); top: -50px; right: -50px; }
-    .hero-visual::after { content: ''; position: absolute; width: 120px; height: 120px; border-radius: 50%; background: rgba(45,48,104,0.08); bottom: -30px; left: -30px; }
-    .hero-stat-group { display: flex; flex-direction: column; gap: 14px; z-index: 1; }
-    .hero-stat { background: #fff; border-radius: 14px; padding: 14px 20px; box-shadow: 0 4px 16px rgba(45,48,104,0.1); display: flex; align-items: center; gap: 14px; min-width: 220px; }
-    .stat-icon { width: 40px; height: 40px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 18px; flex-shrink: 0; }
-    .icon-blue { background: #eef0ff; }
-    .icon-green { background: #ecfdf5; }
-    .icon-orange { background: #fff7ed; }
-    .stat-label { font-size: 11px; color: #9ca3af; font-weight: 500; }
-    .stat-value { font-size: 14px; font-weight: 700; color: #1a1d3a; }
+    /* ─── HERO ─── */
+    .hero-wrap { background: #fff; }
+    .hero { max-width: 1200px; margin: 0 auto; padding: 72px 60px 60px; display: grid; grid-template-columns: 1fr 1fr; gap: 60px; align-items: center; }
+    .hero-text h1 { font-size: 46px; font-weight: 900; line-height: 1.12; color: var(--text); letter-spacing: -1.5px; margin-bottom: 16px; }
+    .hero-text h1 em { font-style: normal; color: var(--indigo); }
+    .hero-text p { font-size: 15px; color: var(--gray-600); max-width: 380px; margin-bottom: 28px; line-height: 1.75; }
+    .hero-actions { display: flex; align-items: center; gap: 12px; }
+    .btn-navy { background: var(--navy); color: #fff; border: none; font-size: 14px; font-weight: 700; padding: 12px 28px; border-radius: 50px; cursor: pointer; text-decoration: none; display: inline-block; transition: background 0.15s; }
+    .btn-navy:hover { background: #3d42a0; }
+    .btn-circle { width: 44px; height: 44px; border-radius: 50%; background: var(--indigo); border: none; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; color: #fff; font-size: 16px; transition: background 0.15s; text-decoration: none; }
+    .btn-circle:hover { background: #5558e0; }
+    .hero-visual { background: linear-gradient(135deg, #eef0ff 0%, #dde0ff 100%); border-radius: 24px; padding: 36px; display: flex; align-items: center; justify-content: center; position: relative; overflow: hidden; min-height: 300px; }
+    .hero-visual::before { content: ''; position: absolute; width: 220px; height: 220px; border-radius: 50%; background: rgba(108,111,245,0.13); top: -60px; right: -60px; }
+    .hero-visual::after  { content: ''; position: absolute; width: 130px; height: 130px; border-radius: 50%; background: rgba(45,48,104,0.08); bottom: -35px; left: -35px; }
+    .panel-cards { display: flex; flex-direction: column; gap: 12px; z-index: 1; width: 100%; max-width: 280px; }
+    .panel-card-mini { background: #fff; border-radius: 14px; padding: 14px 18px; box-shadow: 0 4px 20px rgba(45,48,104,0.12); display: flex; align-items: center; gap: 14px; }
+    .pci { width: 38px; height: 38px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 17px; flex-shrink: 0; }
+    .pci-a { background: #eef0ff; } .pci-b { background: #ecfdf5; } .pci-c { background: #fff7ed; } .pci-d { background: #f5f3ff; }
+    .pci-label { font-size: 10px; color: var(--gray-400); font-weight: 600; letter-spacing: 0.5px; }
+    .pci-name  { font-size: 13px; font-weight: 800; color: var(--text); }
+    .pci-role  { font-size: 10px; color: var(--gray-400); margin-top: 1px; }
 
-    /* ── SECTION ── */
-    .section { padding: 64px 60px; max-width: 1200px; margin: 0 auto; }
-    .section-bg { background: #f8f9ff; padding: 64px 0; }
-    .section-bg .section { padding-top: 0; padding-bottom: 0; }
-    .section-label { font-size: 12px; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; color: #6c6ff5; margin-bottom: 12px; }
-    .section-title { font-size: 34px; font-weight: 900; color: #1a1d3a; letter-spacing: -0.8px; margin-bottom: 8px; }
-    .section-sub { font-size: 14px; color: #6b7280; margin-bottom: 36px; }
+    /* ─── SECTION SHELL ─── */
+    .section-wrap { background: var(--gray-50); padding: 64px 0; }
+    .section { max-width: 1200px; margin: 0 auto; padding: 0 60px; }
+    .section-eyebrow { font-size: 11px; font-weight: 800; letter-spacing: 2px; text-transform: uppercase; color: var(--indigo); margin-bottom: 10px; }
+    .section-title   { font-size: 32px; font-weight: 900; color: var(--text); letter-spacing: -0.8px; margin-bottom: 6px; }
+    .section-sub     { font-size: 14px; color: var(--gray-400); margin-bottom: 32px; }
 
-    /* ── FILTER BAR ── */
-    .filter-row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 32px; }
-    .search-wrap { position: relative; flex: 1; min-width: 220px; max-width: 360px; }
-    .search-wrap input { width: 100%; border: 1.5px solid #e5e7eb; border-radius: 50px; padding: 10px 18px 10px 40px; font-size: 13px; outline: none; background: #fff; color: #1a1d3a; transition: border-color 0.15s; }
-    .search-wrap input:focus { border-color: #6c6ff5; }
-    .search-wrap::before { content: '🔍'; position: absolute; left: 14px; top: 50%; transform: translateY(-50%); font-size: 12px; }
-    .filter-chips { display: flex; gap: 6px; flex-wrap: wrap; }
-    .chip { border: 1.5px solid #e5e7eb; background: #fff; border-radius: 50px; padding: 7px 16px; font-size: 12px; font-weight: 600; cursor: pointer; transition: all 0.15s; color: #6b7280; }
-    .chip:hover { border-color: #6c6ff5; color: #6c6ff5; }
-    .chip.active { background: #2d3068; color: #fff; border-color: #2d3068; }
-    .chip.chip-high.active { background: #dc2626; border-color: #dc2626; }
-    .chip.chip-med.active  { background: #d97706; border-color: #d97706; }
-    .chip.chip-low.active  { background: #16a34a; border-color: #16a34a; }
-    .result-count { font-size: 12px; color: #9ca3af; margin-left: auto; }
+    /* ─── FILTER BAR ─── */
+    .filter-bar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 28px; }
+    .search-box { position: relative; flex: 1; min-width: 200px; max-width: 340px; }
+    .search-box input { width: 100%; border: 1.5px solid var(--gray-200); border-radius: 50px; padding: 9px 18px 9px 38px; font-size: 13px; outline: none; background: #fff; transition: border-color 0.15s; }
+    .search-box input:focus { border-color: var(--indigo); }
+    .search-box::before { content: '🔍'; position: absolute; left: 13px; top: 50%; transform: translateY(-50%); font-size: 12px; }
+    .chips { display: flex; gap: 6px; flex-wrap: wrap; }
+    .chip { border: 1.5px solid var(--gray-200); background: #fff; border-radius: 50px; padding: 6px 14px; font-size: 12px; font-weight: 700; cursor: pointer; transition: all 0.15s; color: var(--gray-600); }
+    .chip:hover { border-color: var(--indigo); color: var(--indigo); }
+    .chip.on      { background: var(--navy);   color: #fff; border-color: var(--navy); }
+    .chip.on-high { background: #dc2626; color: #fff; border-color: #dc2626; }
+    .chip.on-med  { background: #d97706; color: #fff; border-color: #d97706; }
+    .chip.on-low  { background: #16a34a; color: #fff; border-color: #16a34a; }
+    .rcount { font-size: 12px; color: var(--gray-400); margin-left: auto; }
 
-    /* ── REPORT GRID ── */
-    .report-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 20px; }
-    .report-card { background: #fff; border: 1.5px solid #eef0f8; border-radius: 20px; overflow: hidden; transition: box-shadow 0.2s, transform 0.2s; }
-    .report-card:hover { box-shadow: 0 8px 32px rgba(45,48,104,0.12); transform: translateY(-2px); }
-    .card-header { padding: 22px 22px 14px; display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
-    .card-date { font-size: 22px; font-weight: 900; color: #1a1d3a; letter-spacing: -0.5px; }
-    .card-dir { font-size: 11px; font-weight: 700; padding: 4px 10px; border-radius: 50px; white-space: nowrap; }
+    /* ─── REPORT SUMMARY CARDS (LIST) ─── */
+    .report-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); gap: 18px; }
+    .rcard { background: #fff; border: 1.5px solid #e8eaf8; border-radius: var(--radius-card); overflow: hidden; transition: box-shadow 0.2s, transform 0.2s; }
+    .rcard:hover { box-shadow: 0 8px 32px rgba(45,48,104,0.12); transform: translateY(-2px); }
+    .rcard-head { padding: 22px 22px 14px; display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+    .rcard-date  { font-size: 20px; font-weight: 900; color: var(--text); letter-spacing: -0.5px; line-height: 1.2; }
+    .rcard-week  { font-size: 11px; color: var(--gray-400); font-weight: 500; margin-top: 2px; }
+    .dir-badge { font-size: 11px; font-weight: 700; padding: 4px 10px; border-radius: 50px; white-space: nowrap; flex-shrink: 0; }
     .dir-c { background: #eef0ff; color: #3d42a0; }
     .dir-d { background: #fffbeb; color: #b45309; }
     .dir-a { background: #f1f5f9; color: #475569; }
-    .card-topic { font-size: 13px; color: #4b5563; padding: 0 22px 14px; line-height: 1.5; }
-    .card-signals { display: flex; gap: 8px; padding: 0 22px 16px; flex-wrap: wrap; }
-    .sig-pill { font-size: 11px; font-weight: 600; padding: 4px 10px; border-radius: 50px; }
-    .pill-high { background: #fee2e2; color: #dc2626; }
-    .pill-med  { background: #fef3c7; color: #b45309; }
-    .pill-low  { background: #dcfce7; color: #16a34a; }
-    .card-footer { border-top: 1.5px solid #f3f4f6; padding: 12px 22px; display: flex; align-items: center; justify-content: space-between; cursor: pointer; }
-    .card-footer:hover .card-arrow { background: #6c6ff5; color: #fff; }
-    .card-expand { font-size: 12px; font-weight: 600; color: #6c6ff5; }
-    .card-arrow { width: 30px; height: 30px; border-radius: 50%; background: #eef0ff; display: flex; align-items: center; justify-content: center; font-size: 14px; color: #6c6ff5; transition: background 0.15s; }
+    .rcard-topic { font-size: 13px; color: var(--gray-600); padding: 0 22px 14px; line-height: 1.55; }
+    .rcard-sigs  { display: flex; gap: 7px; flex-wrap: wrap; padding: 0 22px 16px; }
+    .spill { font-size: 11px; font-weight: 700; padding: 3px 10px; border-radius: 50px; }
+    .sp-h { background: #fee2e2; color: #dc2626; }
+    .sp-m { background: #fef3c7; color: #b45309; }
+    .sp-l { background: #dcfce7; color: #16a34a; }
+    .rcard-foot { border-top: 1.5px solid #f1f3f9; padding: 11px 22px; display: flex; align-items: center; justify-content: space-between; cursor: pointer; user-select: none; }
+    .rcard-foot:hover .rcard-arrow { background: var(--indigo); color: #fff; }
+    .rcard-foot-label { font-size: 12px; font-weight: 700; color: var(--indigo); }
+    .rcard-arrow { width: 28px; height: 28px; border-radius: 50%; background: var(--indigo-light); display: flex; align-items: center; justify-content: center; font-size: 13px; color: var(--indigo); transition: background 0.15s; }
 
-    /* ── DETAIL DRAWER ── */
-    .detail-drawer { display: none; border-top: 1.5px solid #eef0f8; background: #fafbff; }
-    .detail-drawer.open { display: block; }
-    .drawer-loading { padding: 28px; text-align: center; color: #9ca3af; font-size: 13px; }
+    /* ─── DETAIL DRAWER ─── */
+    .drawer { display: none; border-top: 1.5px solid #eef0f8; }
+    .drawer.open { display: block; }
+    .drawer-loading { padding: 28px; text-align: center; color: var(--gray-400); font-size: 13px; }
+    .drawer-inner { padding: 20px; display: flex; flex-direction: column; gap: 16px; background: #fafbff; }
 
-    /* Panel sections inside drawer */
-    .panel-wrap { padding: 20px 22px; display: flex; flex-direction: column; gap: 14px; }
-    .panel-block { border-left: 3px solid #ccc; padding: 12px 16px; border-radius: 0 10px 10px 0; background: #fff; }
-    .panel-block.pa { border-left-color: #2d3068; }
-    .panel-block.pb { border-left-color: #15803d; }
-    .panel-block.pc { border-left-color: #c2410c; }
-    .panel-block.pd { border-left-color: #6c6ff5; background: #fafbff; }
-    .panel-tag { font-size: 10px; font-weight: 800; letter-spacing: 1px; text-transform: uppercase; margin-bottom: 8px; }
-    .pa .panel-tag { color: #2d3068; }
-    .pb .panel-tag { color: #15803d; }
-    .pc .panel-tag { color: #c2410c; }
-    .pd .panel-tag { color: #6c6ff5; }
+    /* ─── PANEL BLOCK ─── */
+    .panel-blk { border-radius: var(--radius-sm); overflow: hidden; border: 1.5px solid #e8eaf8; }
+    .panel-header { padding: 14px 18px 10px; display: flex; align-items: center; gap: 10px; }
+    .ph-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+    .ph-a { background: var(--navy); }
+    .ph-b { background: var(--green); }
+    .ph-c { background: var(--orange); }
+    .ph-d { background: var(--purple); }
+    .ph-code { font-size: 10px; font-weight: 900; letter-spacing: 1.5px; text-transform: uppercase; }
+    .ph-a .ph-code { color: var(--navy); }
+    .ph-b .ph-code { color: var(--green); }
+    .ph-c .ph-code { color: var(--orange); }
+    .ph-d .ph-code { color: var(--purple); }
+    .ph-title { font-size: 14px; font-weight: 800; color: var(--text); }
+    .ph-role  { font-size: 11px; color: var(--gray-400); margin-left: auto; white-space: nowrap; }
+    .panel-articles { background: #fff; padding: 4px 16px 12px; display: flex; flex-direction: column; gap: 0; }
 
-    /* Article item */
-    .art-item { padding: 10px 0; border-bottom: 1px solid #f3f4f6; }
-    .art-item:last-child { border-bottom: none; }
-    .art-title { font-size: 13px; font-weight: 700; color: #1a1d3a; margin-bottom: 4px; display: flex; align-items: flex-start; gap: 7px; flex-wrap: wrap; }
-    .art-title a { color: inherit; text-decoration: none; }
-    .art-title a:hover { color: #6c6ff5; text-decoration: underline; }
-    .sig-badge { font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 50px; flex-shrink: 0; margin-top: 1px; }
-    .b-high { background: #fee2e2; color: #dc2626; }
-    .b-med  { background: #fef3c7; color: #b45309; }
-    .b-low  { background: #dcfce7; color: #16a34a; }
-    .art-fact   { font-size: 12px; color: #374151; margin: 3px 0; }
-    .art-sowhat { font-size: 12px; color: #3d42a0; font-weight: 500; margin: 3px 0; }
-    .art-opts   { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin: 8px 0; }
-    .opt-box    { background: #f8f9ff; border: 1px solid #eef0f8; border-radius: 8px; padding: 7px 10px; font-size: 11px; }
-    .opt-title  { font-weight: 700; color: #1a1d3a; margin-bottom: 2px; }
-    .opt-trade  { color: #6b7280; font-style: italic; }
-    .art-dp     { background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px; padding: 7px 12px; font-size: 11px; font-weight: 600; color: #92400e; margin-top: 6px; }
+    /* ─── ARTICLE CARD ─── */
+    .art-card { border: 1.5px solid #eef0f8; border-radius: var(--radius-sm); overflow: hidden; margin-bottom: 12px; transition: box-shadow 0.15s; }
+    .art-card:last-child { margin-bottom: 0; }
+    .art-card:hover { box-shadow: 0 4px 16px rgba(45,48,104,0.09); }
 
-    /* Panel D */
-    .bluf-list    { list-style: none; margin-bottom: 10px; }
-    .bluf-list li { font-size: 13px; color: #374151; padding: 3px 0; }
-    .bluf-list li::before { content: '• '; color: #6c6ff5; font-weight: 900; }
-    .causal   { font-size: 13px; color: #374151; line-height: 1.75; margin: 8px 0; }
-    .keyvar   { font-size: 13px; font-weight: 700; color: #6c6ff5; margin: 6px 0; }
-    .risk-tbl { width: 100%; border-collapse: collapse; font-size: 12px; margin: 8px 0; }
-    .risk-tbl th { background: #eef0ff; padding: 6px 10px; text-align: left; font-weight: 700; color: #2d3068; }
-    .risk-tbl td { padding: 6px 10px; border-top: 1px solid #eef0f8; }
-    .watch-row { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
-    .watch-tag { background: #eef0ff; color: #3d42a0; font-size: 11px; padding: 3px 10px; border-radius: 50px; font-weight: 600; }
-    .dp-box    { background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px; padding: 8px 12px; font-size: 12px; font-weight: 600; color: #92400e; margin-top: 10px; }
+    /* Article header */
+    .art-head { padding: 14px 16px 10px; border-bottom: 1px solid #f3f4f6; background: #fafbff; display: flex; flex-direction: column; gap: 6px; }
+    .art-sig-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .sig-badge { font-size: 10px; font-weight: 800; padding: 3px 9px; border-radius: 50px; flex-shrink: 0; }
+    .sb-h { background: #fee2e2; color: #dc2626; }
+    .sb-m { background: #fef3c7; color: #b45309; }
+    .sb-l { background: #dcfce7; color: #16a34a; }
+    .art-title-text { font-size: 14px; font-weight: 800; color: var(--text); line-height: 1.4; }
+    .art-title-text a { text-decoration: none; color: inherit; }
+    .art-title-text a:hover { color: var(--indigo); text-decoration: underline; }
+    .art-meta { font-size: 11px; color: var(--gray-400); display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+    .art-meta a { color: var(--indigo); text-decoration: none; font-weight: 600; }
+    .art-meta a:hover { text-decoration: underline; }
+    .meta-dot { color: var(--gray-200); }
 
-    /* ── EMPTY STATE ── */
-    .empty-state { grid-column: 1/-1; text-align: center; padding: 60px 20px; }
-    .empty-icon  { font-size: 48px; margin-bottom: 16px; }
-    .empty-state h3 { font-size: 20px; font-weight: 800; color: #1a1d3a; margin-bottom: 8px; }
-    .empty-state p  { font-size: 14px; color: #6b7280; }
+    /* Article body sections */
+    .art-body { padding: 0 16px 14px; }
+    .art-section { padding: 10px 0; border-bottom: 1px dashed #eef0f8; }
+    .art-section:last-child { border-bottom: none; padding-bottom: 0; }
+    .sec-label { font-size: 10px; font-weight: 800; letter-spacing: 1.2px; text-transform: uppercase; margin-bottom: 5px; display: flex; align-items: center; gap: 5px; }
+    .sec-fact   .sec-label { color: #2563eb; }
+    .sec-sowhat .sec-label { color: var(--indigo); }
+    .sec-impact .sec-label { color: var(--orange); }
+    .sec-opts   .sec-label { color: var(--green); }
+    .sec-dp     .sec-label { color: #92400e; }
+    .sec-text { font-size: 13px; color: var(--gray-700); line-height: 1.65; }
+    .sec-sowhat .sec-text { font-weight: 600; color: var(--navy); }
 
-    /* ── FOOTER ── */
-    footer { background: #f8f9ff; border-top: 1.5px solid #eef0f8; padding: 40px 60px; display: flex; align-items: center; justify-content: space-between; }
-    .footer-logo { font-size: 16px; font-weight: 800; color: #2d3068; }
-    .footer-logo span { color: #6c6ff5; }
-    .footer-links { display: flex; gap: 28px; }
-    .footer-links a { font-size: 12px; color: #9ca3af; text-decoration: none; font-weight: 500; }
-    .footer-links a:hover { color: #2d3068; }
-    .footer-credit { font-size: 12px; color: #9ca3af; }
+    /* Strategic Options grid */
+    .opts-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 6px; }
+    .opt-box { border-radius: 8px; padding: 10px 12px; font-size: 12px; line-height: 1.55; }
+    .opt-a { background: #eef0ff; border: 1px solid #c7caff; }
+    .opt-b { background: #f1f5f9; border: 1px solid #cbd5e1; }
+    .opt-label  { font-size: 10px; font-weight: 800; letter-spacing: 0.5px; margin-bottom: 4px; }
+    .opt-a .opt-label { color: var(--indigo); }
+    .opt-b .opt-label { color: #475569; }
+    .opt-action { color: var(--text); font-weight: 500; margin-bottom: 4px; }
+    .opt-trade  { color: var(--gray-400); font-style: italic; font-size: 11px; }
 
-    @media (max-width: 768px) {
-      nav { padding: 16px 20px; }
+    /* Decision Point */
+    .dp-box { background: #fffbeb; border: 1.5px solid #fde68a; border-radius: 8px; padding: 9px 14px; font-size: 12px; font-weight: 700; color: #92400e; line-height: 1.55; }
+    .dp-box::before { content: '⚡ '; }
+
+    /* Source row */
+    .art-source-row { padding: 8px 16px 10px; background: #fafbff; border-top: 1px solid #f3f4f6; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 6px; }
+    .source-badge { font-size: 11px; color: var(--gray-400); }
+    .source-link  { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 700; color: var(--indigo); text-decoration: none; padding: 4px 12px; border: 1.5px solid var(--indigo); border-radius: 50px; transition: all 0.15s; }
+    .source-link:hover { background: var(--indigo); color: #fff; }
+
+    /* ─── PANEL D — BUSINESS REPORT ─── */
+    .pd-wrap { background: #fff; }
+    .pd-section { padding: 14px 18px; border-bottom: 1px solid #eef0f8; }
+    .pd-section:last-child { border-bottom: none; }
+    .pd-sec-label { font-size: 10px; font-weight: 900; letter-spacing: 1.5px; text-transform: uppercase; color: var(--purple); margin-bottom: 8px; display: flex; align-items: center; gap: 6px; }
+    .pd-sec-label .ld { width: 8px; height: 8px; border-radius: 50%; background: var(--purple); flex-shrink: 0; }
+    .bluf-list { list-style: none; display: flex; flex-direction: column; gap: 6px; }
+    .bluf-list li { font-size: 13px; color: var(--gray-700); padding: 8px 12px; background: var(--purple-light); border-left: 3px solid var(--purple); border-radius: 0 6px 6px 0; line-height: 1.6; }
+    .perspective-box { background: #f5f3ff; border: 1.5px solid #ddd6fe; border-radius: var(--radius-sm); padding: 12px 14px; }
+    .perspective-box .frame-tag { display: inline-flex; align-items: center; gap: 5px; font-size: 10px; font-weight: 800; letter-spacing: 1px; color: var(--purple); background: #ede9fe; padding: 3px 9px; border-radius: 50px; margin-bottom: 8px; }
+    .perspective-text { font-size: 13px; color: var(--gray-700); line-height: 1.7; }
+    .causal-chain { font-size: 13px; color: var(--text); line-height: 1.8; background: var(--gray-50); border-radius: var(--radius-sm); padding: 12px 14px; border-left: 3px solid var(--navy); }
+    .keyvar-pill { display: inline-block; background: var(--indigo-light); color: var(--navy); font-size: 13px; font-weight: 800; padding: 6px 16px; border-radius: 50px; border: 1.5px solid #c7caff; }
+    .risk-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    .risk-table th { background: var(--indigo-light); padding: 7px 12px; text-align: left; font-weight: 800; color: var(--navy); }
+    .risk-table td { padding: 7px 12px; border-top: 1px solid #eef0f8; color: var(--gray-700); }
+    .rl-h { color: #dc2626; font-weight: 700; }
+    .rl-m { color: #d97706; font-weight: 700; }
+    .rl-l { color: #16a34a; font-weight: 700; }
+    .watch-pills { display: flex; flex-wrap: wrap; gap: 7px; }
+    .watch-pill { background: var(--indigo-light); color: #3d42a0; font-size: 11px; font-weight: 700; padding: 4px 12px; border-radius: 50px; }
+
+    /* ─── EMPTY / ERROR ─── */
+    .empty-box { grid-column: 1/-1; text-align: center; padding: 64px 20px; }
+    .empty-icon { font-size: 48px; margin-bottom: 16px; }
+    .empty-box h3 { font-size: 20px; font-weight: 900; color: var(--text); margin-bottom: 8px; }
+    .empty-box p  { font-size: 14px; color: var(--gray-400); }
+
+    /* ─── FOOTER ─── */
+    footer { background: var(--gray-50); border-top: 1.5px solid var(--gray-200); padding: 36px 60px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px; }
+    .footer-logo { font-size: 16px; font-weight: 900; color: var(--navy); }
+    .footer-logo span { color: var(--indigo); }
+    .footer-links { display: flex; gap: 24px; flex-wrap: wrap; }
+    .footer-links a { font-size: 12px; color: var(--gray-400); text-decoration: none; font-weight: 500; }
+    .footer-links a:hover { color: var(--navy); }
+    .footer-credit { font-size: 12px; color: var(--gray-400); }
+
+    /* ─── RESPONSIVE ─── */
+    @media (max-width: 900px) {
+      nav { padding: 14px 20px; }
       .nav-links { display: none; }
-      .hero { grid-template-columns: 1fr; padding: 40px 20px 32px; gap: 32px; }
-      .hero-text h1 { font-size: 32px; }
-      .hero-visual { min-height: 200px; }
-      .section { padding: 40px 20px; }
+      .hero { grid-template-columns: 1fr; padding: 40px 20px 32px; gap: 28px; }
+      .hero-text h1 { font-size: 34px; }
+      .hero-visual { min-height: 180px; padding: 24px; }
+      .section { padding: 0 20px; }
+      .section-wrap { padding: 48px 0; }
       .report-grid { grid-template-columns: 1fr; }
-      footer { padding: 24px 20px; flex-direction: column; gap: 16px; text-align: center; }
-      .footer-links { flex-wrap: wrap; justify-content: center; }
+      .opts-grid { grid-template-columns: 1fr; }
+      footer { padding: 24px 20px; }
+      .footer-links { flex-wrap: wrap; }
     }
   </style>
 </head>
 <body>
 
-<!-- NAV -->
+<!-- ─── NAV ─── -->
 <nav>
   <div class="nav-logo">hr<span>·</span>brief</div>
   <div class="nav-links">
     <a href="#archive">Archive</a>
-    <a href="https://smjportfolio.com" target="_blank" rel="noopener">About</a>
+    <a href="https://smjportfolio.com" target="_blank" rel="noopener">Portfolio</a>
   </div>
-  <a class="nav-cta" href="https://smjportfolio.com" target="_blank" rel="noopener">
-    성명재 Portfolio →
-  </a>
+  <a class="nav-cta" href="https://smjportfolio.com" target="_blank" rel="noopener">성명재 Portfolio →</a>
 </nav>
 
-<!-- HERO -->
-<div style="background:#fff;">
+<!-- ─── HERO ─── -->
+<div class="hero-wrap">
   <div class="hero">
     <div class="hero-text">
       <h1>Weekly<br/><em>Intelligence</em><br/>Archive</h1>
-      <p>오뚜기라면 HR 전략팀을 위한 주간 비즈니스 인텔리전스.<br/>국제 MACRO → 한국 MICRO → 산업·경쟁사 → 통합 전략 리포트.</p>
+      <p>오뚜기라면 HR 전략팀을 위한 주간 비즈니스 인텔리전스.<br/>Goldman Sachs + BCG 프레임으로 분석한 MACRO → MICRO → 산업 → 전략 리포트.</p>
       <div class="hero-actions">
-        <a class="btn-primary" href="#archive">리포트 보기</a>
-        <button class="btn-dot" onclick="document.getElementById('archive').scrollIntoView({behavior:'smooth'})">↓</button>
+        <a class="btn-navy" href="#archive">리포트 보기</a>
+        <a class="btn-circle" href="#archive">↓</a>
       </div>
     </div>
     <div class="hero-visual">
-      <div class="hero-stat-group">
-        <div class="hero-stat">
-          <div class="stat-icon icon-blue">🌐</div>
-          <div>
-            <div class="stat-label">PANEL A</div>
-            <div class="stat-value">국제 MACRO</div>
-          </div>
+      <div class="panel-cards">
+        <div class="panel-card-mini">
+          <div class="pci pci-a">🌐</div>
+          <div><div class="pci-label">PANEL A</div><div class="pci-name">국제 MACRO</div><div class="pci-role">Goldman Sachs 글로벌 리서치</div></div>
         </div>
-        <div class="hero-stat">
-          <div class="stat-icon icon-green">🇰🇷</div>
-          <div>
-            <div class="stat-label">PANEL B</div>
-            <div class="stat-value">대한민국 MICRO</div>
-          </div>
+        <div class="panel-card-mini">
+          <div class="pci pci-b">🇰🇷</div>
+          <div><div class="pci-label">PANEL B</div><div class="pci-name">대한민국 MICRO</div><div class="pci-role">BCG Korea 시니어 컨설턴트</div></div>
         </div>
-        <div class="hero-stat">
-          <div class="stat-icon icon-orange">🏭</div>
-          <div>
-            <div class="stat-label">PANEL C</div>
-            <div class="stat-value">산업·회사</div>
-          </div>
+        <div class="panel-card-mini">
+          <div class="pci pci-c">🏭</div>
+          <div><div class="pci-label">PANEL C</div><div class="pci-name">산업·회사</div><div class="pci-role">오뚜기라면 HR 전략 애널리스트</div></div>
+        </div>
+        <div class="panel-card-mini">
+          <div class="pci pci-d">📊</div>
+          <div><div class="pci-label">PANEL D</div><div class="pci-name">비즈니스 리포트</div><div class="pci-role">BCG/Goldman 30년 경력 컨설턴트</div></div>
         </div>
       </div>
     </div>
   </div>
 </div>
 
-<!-- ARCHIVE SECTION -->
-<div class="section-bg" id="archive">
+<!-- ─── ARCHIVE SECTION ─── -->
+<div class="section-wrap" id="archive">
   <div class="section">
-    <div class="section-label">Weekly Reports</div>
+    <div class="section-eyebrow">Weekly Reports</div>
     <div class="section-title">Intelligence Archive</div>
-    <div class="section-sub">Gemini 6단계 분석 · BCG/Goldman 프레임 · 매주 자동 발행</div>
+    <div class="section-sub">Gemini 6단계 분석 · BCG/Goldman 프레임 · 매주 자동 발행 · 전체 원문 링크 포함</div>
 
-    <div class="filter-row">
-      <div class="search-wrap">
-        <input type="text" id="search-input" placeholder="키워드 검색 (원자재, 주52시간 ...)" />
+    <div class="filter-bar">
+      <div class="search-box">
+        <input type="text" id="search-input" placeholder="키워드 검색 (원자재, 주52시간, 중대재해 ...)" />
       </div>
-      <div class="filter-chips">
-        <button class="chip active" data-dir="all">전체</button>
+      <div class="chips" id="dir-chips">
+        <button class="chip on" data-dir="all">전체</button>
         <button class="chip" data-dir="Converging">▲ 수렴</button>
         <button class="chip" data-dir="Diverging">↔ 분산</button>
         <button class="chip" data-dir="Ambiguous">? 불확실</button>
       </div>
-      <div class="filter-chips">
-        <button class="chip chip-high" data-sig="High">🔴 High</button>
-        <button class="chip chip-med"  data-sig="Medium">🟡 Medium</button>
-        <button class="chip chip-low"  data-sig="Low">🟢 Low</button>
+      <div class="chips" id="sig-chips">
+        <button class="chip" data-sig="High">🔴 High</button>
+        <button class="chip" data-sig="Medium">🟡 Medium</button>
+        <button class="chip" data-sig="Low">🟢 Low</button>
       </div>
-      <span class="result-count" id="result-count"></span>
+      <span class="rcount" id="rcount"></span>
     </div>
 
     <div class="report-grid" id="report-list">
-      <div class="empty-state">
-        <div class="empty-icon">📋</div>
-        <h3>불러오는 중...</h3>
-        <p>data/reports/index.json 조회 중</p>
-      </div>
+      <div class="empty-box"><div class="empty-icon">📋</div><h3>불러오는 중...</h3><p>data/reports/index.json 조회 중</p></div>
     </div>
   </div>
 </div>
 
-<!-- FOOTER -->
+<!-- ─── FOOTER ─── -->
 <footer>
   <div class="footer-logo">hr<span>·</span>brief</div>
   <div class="footer-links">
@@ -266,156 +319,288 @@ let activeDir = 'all';
 let activeSig = null;
 let searchText = '';
 
-function dirInfo(dir) {
-  if (dir === 'Converging') return { cls: 'dir-c', label: '▲ Converging' };
-  if (dir === 'Diverging')  return { cls: 'dir-d', label: '↔ Diverging' };
-  return { cls: 'dir-a', label: '? Ambiguous' };
-}
-
-function escHtml(s) {
+/* ── helpers ── */
+function esc(s) {
   if (!s) return '';
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
+function dirInfo(d) {
+  if (d === 'Converging') return { cls:'dir-c', label:'▲ Converging' };
+  if (d === 'Diverging')  return { cls:'dir-d', label:'↔ Diverging' };
+  return { cls:'dir-a', label:'? Ambiguous' };
+}
+function likelihoodCls(v) {
+  if (!v) return '';
+  const u = v.toUpperCase();
+  if (u === 'HIGH') return 'rl-h';
+  if (u === 'MEDIUM' || u === 'MED') return 'rl-m';
+  return 'rl-l';
+}
 
+/* ── render report list ── */
 function renderList(reports) {
   const el = document.getElementById('report-list');
-  document.getElementById('result-count').textContent = `${reports.length}개 리포트`;
+  document.getElementById('rcount').textContent = `${reports.length}개 리포트`;
   if (!reports.length) {
-    const msg = allReports.length
-      ? `<div class="empty-state"><div class="empty-icon">🔍</div><h3>조건에 맞는 리포트가 없습니다</h3><p>필터를 변경해 보세요.</p></div>`
-      : `<div class="empty-state"><div class="empty-icon">📭</div><h3>아직 리포트가 없습니다</h3><p>GitHub Actions가 처음 실행되면 자동으로 표시됩니다.</p></div>`;
-    el.innerHTML = msg;
+    el.innerHTML = allReports.length
+      ? `<div class="empty-box"><div class="empty-icon">🔍</div><h3>조건에 맞는 리포트가 없습니다</h3><p>필터를 변경해 보세요.</p></div>`
+      : `<div class="empty-box"><div class="empty-icon">📭</div><h3>아직 리포트가 없습니다</h3><p>GitHub Actions가 처음 실행되면 자동으로 표시됩니다.</p></div>`;
     return;
   }
   el.innerHTML = reports.map(r => {
     const ss = r.signal_summary || {};
-    const highN = ss.High || 0, medN = ss.Medium || 0, lowN = ss.Low || 0;
-    const topic = (r.panel_d && r.panel_d.topic) || (r.all_tags || []).slice(0,4).join(' · ') || '—';
+    const H = ss.High||0, M = ss.Medium||0, L = ss.Low||0;
+    const topic = (r.panel_d && r.panel_d.topic) || (r.all_tags||[]).slice(0,4).join(' · ') || '—';
     const di = dirInfo(ss.direction);
+    const dateObj = new Date(r.date);
+    const weekLabel = isNaN(dateObj) ? '' : `${dateObj.getFullYear()}년 ${dateObj.getMonth()+1}월 ${dateObj.getDate()}일 발행`;
     return `
-      <div class="report-card" id="card-${r.date}">
-        <div class="card-header">
-          <div class="card-date">${r.date}</div>
-          <div class="card-dir ${di.cls}">${di.label}</div>
+    <div class="rcard" id="rcard-${r.date}">
+      <div class="rcard-head">
+        <div>
+          <div class="rcard-date">${esc(r.date)}</div>
+          <div class="rcard-week">${weekLabel}</div>
         </div>
-        <div class="card-topic">${escHtml(topic)}</div>
-        <div class="card-signals">
-          ${highN ? `<span class="sig-pill pill-high">🔴 High ×${highN}</span>` : ''}
-          ${medN  ? `<span class="sig-pill pill-med">🟡 Medium ×${medN}</span>`  : ''}
-          ${lowN  ? `<span class="sig-pill pill-low">🟢 Low ×${lowN}</span>`     : ''}
-        </div>
-        <div class="card-footer" onclick="toggleDetail('${r.date}')">
-          <span class="card-expand" id="expand-${r.date}">상세 보기</span>
-          <div class="card-arrow" id="arrow-${r.date}">▾</div>
-        </div>
-        <div class="detail-drawer" id="detail-${r.date}"></div>
-      </div>`;
+        <div class="dir-badge ${di.cls}">${di.label}</div>
+      </div>
+      <div class="rcard-topic">${esc(topic)}</div>
+      <div class="rcard-sigs">
+        ${H ? `<span class="spill sp-h">🔴 High ×${H}</span>` : ''}
+        ${M ? `<span class="spill sp-m">🟡 Medium ×${M}</span>` : ''}
+        ${L ? `<span class="spill sp-l">🟢 Low ×${L}</span>` : ''}
+      </div>
+      <div class="rcard-foot" onclick="toggleDetail('${r.date}')">
+        <span class="rcard-foot-label" id="rlabel-${r.date}">전체 분석 보기</span>
+        <div class="rcard-arrow" id="rarrow-${r.date}">▾</div>
+      </div>
+      <div class="drawer" id="drawer-${r.date}"></div>
+    </div>`;
   }).join('');
 }
 
+/* ── toggle detail ── */
 async function toggleDetail(date) {
-  const drawer = document.getElementById(`detail-${date}`);
-  const arrow  = document.getElementById(`arrow-${date}`);
-  const label  = document.getElementById(`expand-${date}`);
+  const drawer = document.getElementById(`drawer-${date}`);
+  const arrow  = document.getElementById(`rarrow-${date}`);
+  const label  = document.getElementById(`rlabel-${date}`);
   if (drawer.classList.contains('open')) {
     drawer.classList.remove('open');
-    arrow.textContent = '▾'; label.textContent = '상세 보기';
+    arrow.textContent = '▾'; label.textContent = '전체 분석 보기';
     return;
   }
   drawer.classList.add('open');
   arrow.textContent = '▴'; label.textContent = '닫기';
   if (drawer.dataset.loaded) return;
   drawer.dataset.loaded = '1';
-  drawer.innerHTML = '<div class="drawer-loading">불러오는 중...</div>';
+  drawer.innerHTML = '<div class="drawer-loading">분석 리포트를 불러오는 중...</div>';
   try {
     const res = await fetch(`${BASE}${date}.json`);
     if (!res.ok) throw new Error();
     const d = await res.json();
-    drawer.innerHTML = buildDetail(d);
+    drawer.innerHTML = buildDetail(d, date);
   } catch {
     drawer.innerHTML = '<div class="drawer-loading">리포트를 불러올 수 없습니다.</div>';
   }
 }
 
-function buildDetail(d) {
-  let html = '<div class="panel-wrap">';
-  if (d.panel_a && d.panel_a.length) html += panelSection('PANEL A · 국제 MACRO', d.panel_a, 'pa');
-  if (d.panel_b && d.panel_b.length) html += panelSection('PANEL B · 대한민국 MICRO', d.panel_b, 'pb');
-  if (d.panel_c && d.panel_c.length) html += panelSection('PANEL C · 산업·회사', d.panel_c, 'pc');
-  if (d.panel_d)                     html += panelDBlock(d.panel_d);
+/* ── build full detail ── */
+function buildDetail(d, date) {
+  let html = '<div class="drawer-inner">';
+  const panelDefs = [
+    { key:'panel_a', code:'PANEL A', title:'국제 MACRO', role:'Goldman Sachs 글로벌 리서치 관점', dot:'ph-a' },
+    { key:'panel_b', code:'PANEL B', title:'대한민국 MICRO', role:'BCG Korea 시니어 컨설턴트 관점', dot:'ph-b' },
+    { key:'panel_c', code:'PANEL C', title:'산업·회사', role:'오뚜기라면 HR 전략 애널리스트 관점', dot:'ph-c' },
+  ];
+  panelDefs.forEach(p => {
+    if (d[p.key] && d[p.key].length) {
+      html += `
+      <div class="panel-blk">
+        <div class="panel-header">
+          <div class="ph-dot ${p.dot}"></div>
+          <div class="${p.dot.replace('ph-','panel-header ph-code ph-')}" style="color:inherit">
+            <span class="ph-code" style="${dotColor(p.dot)}">${esc(p.code)}</span>
+          </div>
+          <div class="ph-title">${esc(p.title)}</div>
+          <div class="ph-role">${esc(p.role)}</div>
+        </div>
+        <div class="panel-articles">${d[p.key].map(a => artCard(a)).join('')}</div>
+      </div>`;
+    }
+  });
+  if (d.panel_d) html += panelDBlock(d.panel_d);
   html += '</div>';
-  return html || '<div class="drawer-loading">분석 데이터가 없습니다.</div>';
+  return html;
 }
 
-function panelSection(label, articles, cls) {
-  return `<div class="panel-block ${cls}"><div class="panel-tag">${escHtml(label)}</div>${articles.map(artItem).join('')}</div>`;
+function dotColor(cls) {
+  if (cls === 'ph-a') return 'color:var(--navy)';
+  if (cls === 'ph-b') return 'color:var(--green)';
+  if (cls === 'ph-c') return 'color:var(--orange)';
+  return 'color:var(--purple)';
 }
 
-function artItem(a) {
-  const sigMap = { High: 'b-high', Medium: 'b-med', Low: 'b-low' };
-  const bc = sigMap[a.signal_strength] || 'b-low';
+/* ── article card ── */
+function artCard(a) {
+  const sigMap = { High:'sb-h', Medium:'sb-m', Low:'sb-l' };
+  const bc = sigMap[a.signal_strength] || 'sb-l';
   const link = a.link || a.url || '';
   const title = a.headline || a.title || '(제목 없음)';
   const titleHtml = link
-    ? `<a href="${escHtml(link)}" target="_blank" rel="noopener">${escHtml(title)}</a>`
-    : escHtml(title);
-  let opts = '';
-  if (a.strategic_options && a.strategic_options.length) {
-    opts = `<div class="art-opts">${a.strategic_options.map(o =>
-      `<div class="opt-box"><div class="opt-title">${escHtml(o.option||'')}</div><div>${escHtml(o.action||'')}</div>${o.tradeoff ? `<div class="opt-trade">Trade-off: ${escHtml(o.tradeoff)}</div>` : ''}</div>`
-    ).join('')}</div>`;
+    ? `<a href="${esc(link)}" target="_blank" rel="noopener">${esc(title)}</a>`
+    : esc(title);
+  const source = a.source || a.publisher || '';
+  const refId  = a.ref_id  != null ? `#${a.ref_id}` : '';
+
+  // Strategic Options
+  let optsHtml = '';
+  const opts = a.strategic_options || [];
+  if (opts.length) {
+    optsHtml = `<div class="opts-grid">${opts.map((o, i) => `
+      <div class="opt-box ${i===0?'opt-a':'opt-b'}">
+        <div class="opt-label">${esc(o.option||`Option ${i+1}`)}</div>
+        <div class="opt-action">${esc(o.action||'')}</div>
+        ${o.tradeoff ? `<div class="opt-trade">Trade-off: ${esc(o.tradeoff)}</div>` : ''}
+      </div>`).join('')}</div>`;
   }
-  return `<div class="art-item">
-    <div class="art-title">
-      ${a.signal_strength ? `<span class="sig-badge ${bc}">${escHtml(a.signal_strength)}</span>` : ''}
-      ${titleHtml}
+
+  return `
+  <div class="art-card">
+    <div class="art-head">
+      <div class="art-sig-row">
+        ${a.signal_strength ? `<span class="sig-badge ${bc}">${esc(a.signal_strength)}</span>` : ''}
+        ${refId ? `<span style="font-size:10px;color:var(--gray-400);font-weight:600;">${refId}</span>` : ''}
+      </div>
+      <div class="art-title-text">${titleHtml}</div>
+      <div class="art-meta">
+        ${source ? `<span>${esc(source)}</span>` : ''}
+        ${source && link ? `<span class="meta-dot">·</span>` : ''}
+        ${link ? `<a href="${esc(link)}" target="_blank" rel="noopener">원문 링크 ↗</a>` : ''}
+      </div>
     </div>
-    ${a.fact    ? `<div class="art-fact">${escHtml(a.fact)}</div>` : ''}
-    ${a.so_what ? `<div class="art-sowhat">→ ${escHtml(a.so_what)}</div>` : ''}
-    ${opts}
-    ${a.decision_point ? `<div class="art-dp">⚡ ${escHtml(a.decision_point)}</div>` : ''}
+    <div class="art-body">
+      ${a.fact ? `
+      <div class="art-section sec-fact">
+        <div class="sec-label">📊 FACT — 핵심 사실</div>
+        <div class="sec-text">${esc(a.fact)}</div>
+      </div>` : ''}
+      ${a.so_what ? `
+      <div class="art-section sec-sowhat">
+        <div class="sec-label">→ SO WHAT — 오뚜기라면에 미치는 의미</div>
+        <div class="sec-text">${esc(a.so_what)}</div>
+      </div>` : ''}
+      ${a.business_impact ? `
+      <div class="art-section sec-impact">
+        <div class="sec-label">💼 BUSINESS IMPACT — 재무·운영·인력 영향</div>
+        <div class="sec-text">${esc(a.business_impact)}</div>
+      </div>` : ''}
+      ${optsHtml ? `
+      <div class="art-section sec-opts">
+        <div class="sec-label">🎯 STRATEGIC OPTIONS — 전략적 선택지</div>
+        ${optsHtml}
+      </div>` : ''}
+      ${a.decision_point ? `
+      <div class="art-section sec-dp">
+        <div class="sec-label">⚡ DECISION POINT — 의사결정 기한</div>
+        <div class="dp-box">${esc(a.decision_point)}</div>
+      </div>` : ''}
+    </div>
+    ${link || source ? `
+    <div class="art-source-row">
+      <span class="source-badge">${source ? `출처: ${esc(source)}` : ''}</span>
+      ${link ? `<a class="source-link" href="${esc(link)}" target="_blank" rel="noopener">🔗 원문 보기</a>` : ''}
+    </div>` : ''}
   </div>`;
 }
 
+/* ── Panel D (Business Report) ── */
 function panelDBlock(pd) {
-  const bluf  = (pd.bluf||[]).map(s=>`<li>${escHtml(s)}</li>`).join('');
   const di    = dirInfo(pd.direction);
-  const risks = (pd.risks||[]).map(r=>`<tr><td>${escHtml(r.risk)}</td><td>${escHtml(r.likelihood)}</td><td>${escHtml(r.impact)}</td></tr>`).join('');
-  const tags  = (pd.watch_list||[]).map(w=>`<span class="watch-tag">${escHtml(w)}</span>`).join('');
-  return `<div class="panel-block pd">
-    <div class="panel-tag">PANEL D · 비즈니스 리포트 &nbsp;<span class="card-dir ${di.cls}" style="font-size:10px;padding:2px 8px;">${di.label}</span></div>
-    ${pd.topic ? `<div style="font-size:15px;font-weight:900;color:#1a1d3a;margin-bottom:10px;">${escHtml(pd.topic)}</div>` : ''}
-    ${bluf ? `<ul class="bluf-list">${bluf}</ul>` : ''}
-    ${pd.direction_reason ? `<div style="font-size:12px;color:#6c6ff5;margin-bottom:8px;">${escHtml(pd.direction_reason)}</div>` : ''}
-    ${pd.causal_narrative ? `<div class="causal">${escHtml(pd.causal_narrative)}</div>` : ''}
-    ${pd.key_variable     ? `<div class="keyvar">핵심 변수: ${escHtml(pd.key_variable)}</div>` : ''}
-    ${risks ? `<table class="risk-tbl"><thead><tr><th>리스크</th><th>발생가능성</th><th>영향도</th></tr></thead><tbody>${risks}</tbody></table>` : ''}
-    ${pd.decision_point ? `<div class="dp-box">⚡ ${escHtml(pd.decision_point)}</div>` : ''}
-    ${tags ? `<div class="watch-row">${tags}</div>` : ''}
+  const bluf  = (pd.bluf||[]).map(s=>`<li>${esc(s)}</li>`).join('');
+  const risks = (pd.risks||[]).map(r=>`
+    <tr>
+      <td>${esc(r.risk)}</td>
+      <td class="${likelihoodCls(r.likelihood)}">${esc(r.likelihood)}</td>
+      <td class="${likelihoodCls(r.impact)}">${esc(r.impact)}</td>
+    </tr>`).join('');
+  const watchTags = (pd.watch_list||[]).map(w=>`<span class="watch-pill">${esc(w)}</span>`).join('');
+
+  // Analytical perspective: explain WHY this analysis was structured this way
+  const dirLabel = pd.direction==='Converging'
+    ? '3개 패널 신호가 같은 방향을 가리키고 있어 전략적 대응 필요성이 높은 상태입니다.'
+    : pd.direction==='Diverging'
+    ? '3개 패널 신호가 서로 다른 방향을 가리키고 있어 추가 정보 수집과 시나리오별 대응이 필요합니다.'
+    : '3개 패널 신호의 방향성이 불분명하여 추세 확인이 선행되어야 합니다.';
+
+  return `
+  <div class="panel-blk">
+    <div class="panel-header" style="border-bottom:1px solid #eef0f8;">
+      <div class="ph-dot ph-d"></div>
+      <span class="ph-code" style="color:var(--purple)">PANEL D</span>
+      <div class="ph-title">비즈니스 인텔리전스 리포트</div>
+      <div class="dir-badge ${di.cls}" style="margin-left:auto;">${di.label}</div>
+    </div>
+    <div class="pd-wrap">
+      ${pd.topic ? `
+      <div class="pd-section">
+        <div style="font-size:17px;font-weight:900;color:var(--text);letter-spacing:-0.3px;">${esc(pd.topic)}</div>
+        <div style="font-size:12px;color:var(--gray-400);margin-top:4px;">BCG/Goldman 30년 경력 컨설턴트 관점 · 3축(MACRO+MICRO+산업) 통합 분석</div>
+      </div>` : ''}
+
+      ${bluf ? `
+      <div class="pd-section">
+        <div class="pd-sec-label"><div class="ld"></div>BOTTOM LINE UP FRONT (BLUF)</div>
+        <ul class="bluf-list">${bluf}</ul>
+      </div>` : ''}
+
+      <div class="pd-section">
+        <div class="pd-sec-label"><div class="ld"></div>분석 관점 — 왜 이렇게 판단했는가</div>
+        <div class="perspective-box">
+          <div class="frame-tag">📐 Goldman Sachs × BCG 통합 프레임</div>
+          <div class="perspective-text">
+            ${pd.direction_reason ? `<strong>${esc(pd.direction_reason)}</strong><br/><br/>` : ''}
+            ${dirLabel}<br/><br/>
+            Panel A(글로벌 정치·경제·원자재)는 Goldman Sachs 글로벌 리서치 방식으로 거시 변수를 추출했고, Panel B(대한민국 노동·규제)는 BCG Korea 컨설팅 시각으로 국내 사업 리스크를 분석했습니다. Panel C(산업·경쟁사·HR)는 오뚜기라면 인사·사업 전략에 직결되는 신호를 식별했습니다. 이 세 축을 통합하여 Panel D는 의사결정자에게 필요한 전략적 방향을 도출합니다.
+          </div>
+        </div>
+      </div>
+
+      ${pd.causal_narrative ? `
+      <div class="pd-section">
+        <div class="pd-sec-label"><div class="ld"></div>인과 서사 — A→B→C 3층 분석</div>
+        <div class="causal-chain">${esc(pd.causal_narrative)}</div>
+      </div>` : ''}
+
+      ${pd.key_variable ? `
+      <div class="pd-section">
+        <div class="pd-sec-label"><div class="ld"></div>핵심 변수</div>
+        <div><span class="keyvar-pill">🎯 ${esc(pd.key_variable)}</span></div>
+      </div>` : ''}
+
+      ${risks ? `
+      <div class="pd-section">
+        <div class="pd-sec-label"><div class="ld"></div>리스크 매트릭스</div>
+        <table class="risk-table">
+          <thead><tr><th>리스크 항목</th><th>발생 가능성</th><th>영향도</th></tr></thead>
+          <tbody>${risks}</tbody>
+        </table>
+      </div>` : ''}
+
+      ${pd.decision_point ? `
+      <div class="pd-section">
+        <div class="pd-sec-label"><div class="ld"></div>DECISION POINT</div>
+        <div class="dp-box">${esc(pd.decision_point)}</div>
+      </div>` : ''}
+
+      ${watchTags ? `
+      <div class="pd-section">
+        <div class="pd-sec-label"><div class="ld"></div>WATCH LIST — 다음 주 모니터링 지표</div>
+        <div class="watch-pills">${watchTags}</div>
+      </div>` : ''}
+    </div>
   </div>`;
 }
 
-// Filter events
-document.querySelectorAll('[data-dir]').forEach(btn => {
-  btn.addEventListener('click', () => {
-    document.querySelectorAll('[data-dir]').forEach(b => b.classList.remove('active'));
-    btn.classList.add('active');
-    activeDir = btn.dataset.dir;
-    applyFilters();
-  });
-});
-document.querySelectorAll('[data-sig]').forEach(btn => {
-  btn.addEventListener('click', () => {
-    if (btn.classList.contains('active')) { btn.classList.remove('active'); activeSig = null; }
-    else { document.querySelectorAll('[data-sig]').forEach(b=>b.classList.remove('active')); btn.classList.add('active'); activeSig = btn.dataset.sig; }
-    applyFilters();
-  });
-});
-document.getElementById('search-input').addEventListener('input', e => {
-  searchText = e.target.value.trim();
-  applyFilters();
-});
-
+/* ── filter logic ── */
 function applyFilters() {
   let r = allReports;
   if (activeDir !== 'all') r = r.filter(x => (x.signal_summary||{}).direction === activeDir);
@@ -431,6 +616,37 @@ function applyFilters() {
   renderList(r);
 }
 
+/* ── event listeners ── */
+document.getElementById('dir-chips').addEventListener('click', e => {
+  const btn = e.target.closest('[data-dir]');
+  if (!btn) return;
+  document.querySelectorAll('[data-dir]').forEach(b => b.classList.remove('on'));
+  btn.classList.add('on');
+  activeDir = btn.dataset.dir;
+  applyFilters();
+});
+
+document.getElementById('sig-chips').addEventListener('click', e => {
+  const btn = e.target.closest('[data-sig]');
+  if (!btn) return;
+  if (btn.classList.contains('on-high') || btn.classList.contains('on-med') || btn.classList.contains('on-low')) {
+    btn.className = 'chip';
+    activeSig = null;
+  } else {
+    document.querySelectorAll('[data-sig]').forEach(b => b.className = 'chip');
+    const sigCls = { High:'on-high', Medium:'on-med', Low:'on-low' };
+    btn.classList.add(sigCls[btn.dataset.sig] || 'on');
+    activeSig = btn.dataset.sig;
+  }
+  applyFilters();
+});
+
+document.getElementById('search-input').addEventListener('input', e => {
+  searchText = e.target.value.trim();
+  applyFilters();
+});
+
+/* ── initial load ── */
 (async () => {
   try {
     const res = await fetch(`${BASE}index.json`);
@@ -438,13 +654,9 @@ function applyFilters() {
     allReports = await res.json();
     applyFilters();
   } catch {
-    document.getElementById('report-list').innerHTML = `
-      <div class="empty-state">
-        <div class="empty-icon">📭</div>
-        <h3>아직 리포트가 없습니다</h3>
-        <p>GitHub Actions가 처음 실행되면 자동으로 표시됩니다.</p>
-      </div>`;
-    document.getElementById('result-count').textContent = '';
+    document.getElementById('report-list').innerHTML =
+      `<div class="empty-box"><div class="empty-icon">📭</div><h3>아직 리포트가 없습니다</h3><p>GitHub Actions가 처음 실행되면 자동으로 표시됩니다.</p></div>`;
+    document.getElementById('rcount').textContent = '';
   }
 })();
 </script>
