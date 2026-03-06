@@ -651,7 +651,7 @@ document.getElementById('search-input').addEventListener('input', e => {
   try {
     const res = await fetch(`${BASE}index.json`);
     if (!res.ok) throw new Error();
-    allReports = await res.json();
+    allReports = ((await res.json()).reports) || [];
     applyFilters();
   } catch {
     document.getElementById('report-list').innerHTML =

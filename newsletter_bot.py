@@ -1317,9 +1317,31 @@ def save_report_json(today_str, panel_a, panel_b, panel_c, business_report,
 
         # 이미 동일 날짜 있으면 덮어쓰기
         index["reports"] = [r for r in index["reports"] if r.get("date") != today_str]
+
+        # signal_strength 카운트 집계 (웹 뷰어 배지용)
+        all_items = list(panel_a or []) + list(panel_b or []) + list(panel_c or [])
+        sig_counts = {"High": 0, "Medium": 0, "Low": 0}
+        for _item in all_items:
+            s = _item.get("signal_strength", "")
+            if s in sig_counts:
+                sig_counts[s] += 1
+
         index["reports"].insert(0, {
             "date": today_str,
-            "direction": business_report.get("direction") if business_report else None,
+            "signal_summary": {
+                "direction": business_report.get("direction") if business_report else None,
+                "High": sig_counts["High"],
+                "Medium": sig_counts["Medium"],
+                "Low": sig_counts["Low"],
+            },
+            "panel_d": {
+                "topic": (business_report.get("topic") or "") if business_report else "",
+            },
+            "all_tags": list({
+                (_item.get("headline") or "")[:30]
+                for _item in all_items
+                if _item.get("headline")
+            }),
         })
         index["reports"] = index["reports"][:52]
 
