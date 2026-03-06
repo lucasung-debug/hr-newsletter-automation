@@ -1245,7 +1245,11 @@ def run_newsletter():
             company_html = '<p style="color:#999;font-size:13px;">금주 회사 소식이 없습니다.</p>'
 
     # Step 10: JSON 저장
-    save_report_json(today_str, final_a, final_b, final_c, business_report)
+    save_report_json(
+        today_str,
+        final_a, final_b, final_c, business_report,
+        raw_a=panel_a_news, raw_b=panel_b_news, raw_c=panel_c_news,
+    )
 
     # Step 11: HTML 생성 & 발송
     logger.info("6. HTML 생성 & 발송...")
@@ -1276,13 +1280,23 @@ def run_weekend_request():
 # ============================================================
 # 14. JSON 저장 (Phase 1 신규 — Phase 2 웹 대시보드 연동 준비)
 # ============================================================
-def save_report_json(today_str, panel_a, panel_b, panel_c, business_report):
-    """data/reports/YYYY-MM-DD.json 저장 및 index.json 업데이트."""
+def save_report_json(today_str, panel_a, panel_b, panel_c, business_report,
+                     raw_a=None, raw_b=None, raw_c=None):
+    """data/reports/YYYY-MM-DD.json 저장 및 index.json 업데이트.
+
+    raw_a/b/c: 관련도 필터 + 교차 중복 제거 후, AI 선정 이전의 전체 수집 기사.
+               Phase 2 기사 스크랩 창고(/articles) 및 NotebookLM 공급용.
+    """
     try:
         os.makedirs("data/reports", exist_ok=True)
         report = {
             "date": today_str,
             "generated_at": datetime.datetime.now(KST).isoformat(),
+            "raw_articles": {
+                "panel_a": raw_a or [],
+                "panel_b": raw_b or [],
+                "panel_c": raw_c or [],
+            },
             "panel_a": panel_a,
             "panel_b": panel_b,
             "panel_c": panel_c,
