@@ -46,3 +46,12 @@ jobs:
           fi
           echo "BOT_MODE=$BOT_MODE"
           python newsletter_bot.py
+
+      - name: Commit report archive
+        if: always()
+        run: |
+          git config user.name "HR Brief Bot"
+          git config user.email "proposition97@gmail.com"
+          git add data/reports/ 2>/dev/null || true
+          git diff --staged --quiet || git commit -m "report: $(date -u +%Y-%m-%d) weekly intelligence"
+          git push origin ${{ github.ref_name }} || true
