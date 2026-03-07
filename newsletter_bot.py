@@ -206,9 +206,9 @@ INDUSTRY_PROFILES = {
             },
         },
         "analyst_roles": {
-            "PANEL_A": "Goldman Sachs 글로벌 리서치 애널리스트",
-            "PANEL_B": "BCG Korea 시니어 컨설턴트",
-            "PANEL_C": "오뚜기라면 HR 전략 애널리스트",
+            "PANEL_A": "글로벌 식품제조기업 HRBP 출신 Goldman Sachs 인적자본 리서치 애널리스트",
+            "PANEL_B": "제조업 노사관계·노동법 전문 HRBP 겸 BCG Korea 조직·인력 컨설턴트",
+            "PANEL_C": "오뚜기라면 HR Business Partner (인력기획·총보상·노사관계·조직개발 총괄)",
         },
         "panel_labels": {
             "PANEL_A": "국제 MACRO — 글로벌 정치·경제·원자재",
@@ -260,27 +260,34 @@ PANEL_COLORS = {
     "PANEL_D": "#7c3aed",  # 보라
 }
 
-# 6단계 분석 스키마 (프롬프트 삽입용)
+# 6단계 HRBP 분석 스키마 (프롬프트 삽입용)
 _ARTICLE_SCHEMA = (
     '{"headline":"...","signal_strength":"High|Medium|Low",'
-    '"fact":"수치 포함 2~3문장","so_what":"오뚜기라면에 뭐가 달라지는가? 1문장",'
-    '"business_impact":"재무·운영·인력 영향",'
+    '"fact":"수치 포함 핵심 사실 2~3문장",'
+    '"so_what":"오뚜기라면 HR(인력기획·총보상·노사·조직) 관점에서 뭐가 달라지는가? 1문장",'
+    '"hr_impact":{'
+    '"workforce_planning":"인력 충원·배치·교대편성 영향 (해당 시)",'
+    '"total_rewards":"임금·수당·복리후생 영향 (해당 시)",'
+    '"employee_relations":"노사관계·근로감독·법적 리스크 (해당 시)",'
+    '"org_capability":"역량개발·조직변경·채용 영향 (해당 시)"'
+    '},'
     '"strategic_options":['
-    '{"option":"A. 선제 대응","action":"...","tradeoff":"..."},'
-    '{"option":"B. 관망","action":"...","tradeoff":"..."}],'
-    '"decision_point":"○○까지 ○○ 결정. 미결 시 ○○.","ref_id":0}'
+    '{"option":"A. 선제 대응","action":"HR 부서 구체 액션","tradeoff":"...","timeline":"주 단위 기한"},'
+    '{"option":"B. 관망","action":"...","tradeoff":"...","timeline":"..."}],'
+    '"decision_point":"YYYY년 MM월 DD일까지 ○○ 결정. 미결 시 ○○.","ref_id":0}'
 )
 
 # Panel D 스키마 (프롬프트 삽입용)
 _REPORT_SCHEMA = (
-    '{"bluf":["문장1","문장2","문장3"],'
+    '{"bluf":["HR 의사결정자가 가장 먼저 알아야 할 문장1","문장2","문장3"],'
     '"direction":"Converging|Diverging|Ambiguous",'
-    '"direction_reason":"1문장",'
-    '"causal_narrative":"A→B→C 3층 인과 서사",'
-    '"key_variable":"핵심 변수명",'
-    '"risks":[{"risk":"...","likelihood":"High|Medium","impact":"High|Medium"}],'
-    '"decision_point":"기한+미결 시 리스크",'
-    '"watch_list":["지표1","지표2"]}'
+    '"direction_reason":"HR 관점 1문장",'
+    '"causal_narrative":"거시환경→노동규제→HR전략 3층 인과 서사",'
+    '"key_variable":"HR 핵심 변수명",'
+    '"hr_priorities":[{"priority":"...","urgency":"즉시|1개월|분기","owner":"인사팀|노무|안전보건|경영기획"}],'
+    '"risks":[{"risk":"...","likelihood":"High|Medium","impact":"High|Medium","hr_mitigation":"HR 대응 방안"}],'
+    '"decision_point":"YYYY년 MM월 DD일까지 기한+미결 시 HR 리스크",'
+    '"watch_list":["HR 관련 지표1","지표2"]}'
 )
 
 
@@ -472,7 +479,7 @@ def fetch_rss_news(panel_id):
 # ============================================================
 # 6. 패널별 6단계 AI 분석 (Phase 1)
 # ============================================================
-def analyze_panel(api_key, news_list, panel_id):
+def analyze_panel(api_key, news_list, panel_id, today_str=None):
     """6단계 분석. top-3 기사를 선정하여 분석.
 
     반환: (분석된 기사 리스트, error_type 또는 None)
@@ -480,13 +487,16 @@ def analyze_panel(api_key, news_list, panel_id):
     if not news_list:
         return [], None
 
+    if today_str is None:
+        today_str = datetime.datetime.now(KST).strftime("%Y년 %m월 %d일")
+
     analyst_role = PROFILE['analyst_roles'].get(panel_id, '오뚜기라면 HR 전략 애널리스트')
     panel_label = PROFILE['panel_labels'].get(panel_id, panel_id)
     selection_rule = PROFILE['selection_rules'].get(panel_id, '')
 
     ctx = ""
     for i, n in enumerate(news_list):
-        ctx += f"[{i}] {n['title']} | {n['desc']}\n"
+        ctx += f"[{i}] ({n['date']}) {n['title']} | {n['desc']}\n"
 
     prompt = f"""당신은 {analyst_role}입니다.
 
@@ -496,20 +506,34 @@ def analyze_panel(api_key, news_list, panel_id):
 [회사 컨텍스트]
 {COMPANY_CONTEXT}
 
-아래 [{panel_label}] 뉴스 후보에서 **최대 3개**를 선정하여 6단계 전략 분석을 작성하세요.
+[오늘 날짜] {today_str}
+- 모든 기한·시점은 이 날짜 기준으로 작성하세요.
+- decision_point 기한은 반드시 {today_str} 이후여야 합니다.
+
+아래 [{panel_label}] 뉴스 후보에서 **최대 3개**를 선정하여 6단계 HRBP 분석을 작성하세요.
 
 [선정 기준]
 {selection_rule}
 - 관련 뉴스가 없으면 정확히 {{"articles": []}} 만 출력하세요.
 - 품질 우선: 1개라도 깊은 분석이 3개의 얕은 분석보다 낫습니다.
 
-[6단계 분석 스키마]
-- signal_strength: High(즉각 대응 필요) | Medium(모니터링) | Low(참고)
-- fact: 수치 포함 핵심 사실 2~3문장 (뉴스에 있는 내용만)
-- so_what: "그래서 오뚜기라면에 뭐가 달라지는가?" — 1문장
-- business_impact: 재무·운영·인력 측면의 영향
-- strategic_options: A(선제 대응), B(관망) 각각 action + tradeoff
-- decision_point: 기한 명시 + 미결 시 리스크
+[6단계 HRBP 분석 스키마]
+- signal_strength: High(즉각 HR 대응 필요) | Medium(모니터링+준비) | Low(참고)
+- fact: 수치 포함 핵심 사실 2~3문장 (뉴스에 있는 내용만, 추정 시 "(추정)" 명시)
+- so_what: "오뚜기라면 HR(인력기획·총보상·노사·조직) 관점에서 뭐가 달라지는가?" — 해당 HR 영역 명시, 1문장
+- hr_impact: 4개 HR 축 중 해당 항목만 구체적으로 작성
+  - workforce_planning: 2조 2교대 인력 배치·충원·교대편성·외국인근로자 등
+  - total_rewards: 임금피크제·교대수당·연장근로수당·복리후생비 등
+  - employee_relations: 노조교섭·근로감독·중대재해·주52시간 준수 등
+  - org_capability: 직무교육·다기능공·글로벌 HR·채용 등
+- strategic_options: HR 부서가 실행할 구체적 액션 + 주 단위 timeline + tradeoff
+- decision_point: {today_str} 이후 구체적 날짜 기한 명시
+
+[금지 패턴]
+- 재무 일반론만 쓰고 HR 영향으로 연결하지 않는 것
+- {today_str} 이전 기한 제시
+- 뉴스에 없는 수치 생성
+- "선제 대응" vs "관망" 제목만 반복하고 HR 구체 액션 없는 것
 
 [중요 규칙]
 1. 반드시 아래 JSON 형식만 출력하세요. 다른 텍스트, 마크다운은 절대 포함하지 마세요.
@@ -527,13 +551,16 @@ def analyze_panel(api_key, news_list, panel_id):
         logger.warning(f"Gemini 1차 실패 ({panel_id}): {err} — 간소화 프롬프트로 재시도")
         time.sleep(10)
         simple_ctx = "\n".join(
-            f"[{i}] {n['title']} | {n['desc']}"
+            f"[{i}] ({n['date']}) {n['title']} | {n['desc']}"
             for i, n in enumerate(news_list[:2])
         )
-        simple_prompt = f"""오뚜기라면 전략 애널리스트입니다. 아래 뉴스를 6단계 분석하세요.
+        simple_prompt = f"""오뚜기라면 HR Business Partner입니다. 아래 뉴스를 6단계 HRBP 분석하세요.
 
 [회사 컨텍스트]
 {COMPANY_CONTEXT}
+
+[오늘 날짜] {today_str}
+- decision_point 기한은 반드시 {today_str} 이후여야 합니다.
 
 JSON만 출력하세요:
 {{"articles": [{_ARTICLE_SCHEMA}]}}
@@ -616,36 +643,43 @@ def make_smart_fallback(news_list, panel_id, error_type=None):
 # ============================================================
 # 8. Panel D — 비즈니스 리포트 (Phase 1)
 # ============================================================
-def generate_business_report(api_key, panel_a_news, panel_b_news, panel_c_news):
+def generate_business_report(api_key, panel_a_news, panel_b_news, panel_c_news, today_str=None):
     """3축(A·B·C) 교차 통합 비즈니스 리포트 생성 (Panel D)."""
+    if today_str is None:
+        today_str = datetime.datetime.now(KST).strftime("%Y년 %m월 %d일")
+
     def fmt_panel(label, news):
         lines = f"--- {label} ---\n"
         for i, n in enumerate(news):
-            lines += f"[{i}] {n['title']} | {n['desc']}\n"
+            lines += f"[{i}] ({n['date']}) {n['title']} | {n['desc']}\n"
         return lines
 
     all_ctx = fmt_panel("Panel A — 국제 MACRO", panel_a_news)
     all_ctx += "\n" + fmt_panel("Panel B — 한국 MICRO", panel_b_news)
     all_ctx += "\n" + fmt_panel("Panel C — 산업·회사", panel_c_news)
 
-    prompt = f"""당신은 BCG/Goldman Sachs 30년 경력 수석 컨설턴트입니다.
+    prompt = f"""당신은 글로벌 식품제조 그룹 CHRO 출신 BCG/Goldman Sachs 30년 경력 인적자본 전략 수석 컨설턴트입니다.
 
 [회사 컨텍스트]
 {COMPANY_CONTEXT}
 
-[분석 프레임워크]
-Layer 1 (Panel A): 이번 주 글로벌에서 무슨 일이 일어났는가?
-Layer 2 (Panel B): 한국은 어떻게 반응했/반응할 것인가?
-Layer 3 (Panel C): 오뚜기라면은 어디에 노출되었는가?
-통합 질문: 세 층위가 같은 방향으로 수렴(Converging)하는가, 상쇄(Diverging)하는가, 불확실(Ambiguous)한가?
+[오늘 날짜] {today_str}
+- decision_point 기한은 반드시 {today_str} 이후여야 합니다.
+
+[분석 프레임워크 — HRBP 3축 통합]
+Layer 1 (Panel A): 글로벌 거시환경이 오뚜기라면 인력 운영에 어떤 압력을 가하는가? (원가→인건비, 수출→인력수요, 환율→해외파견)
+Layer 2 (Panel B): 한국 노동정책·규제가 2조 2교대 제조업 HR에 어떤 변화를 요구하는가? (법규준수, 노사관계, 안전보건)
+Layer 3 (Panel C): 경쟁사 대비 오뚜기라면 HR 경쟁력은 어디에 노출되었는가? (인재확보, 조직역량, ESG)
+통합 질문: 세 층위가 HR 전략의 같은 방향으로 수렴(Converging)하는가, 상쇄(Diverging)하는가, 불확실(Ambiguous)한가?
 
 [필수 규칙]
 1. 반드시 아래 JSON 형식만 출력하세요. 마크다운 불가.
 2. 뉴스에 없는 사실·수치를 만들어내지 마세요. 추정 시 "(추정)" 명시.
-3. bluf: Bottom Line Up Front — 의사결정자가 가장 먼저 알아야 할 3문장.
-4. causal_narrative: "A→B→C" 3층 인과 서사 (한 문단).
-5. risks: 3개 이하.
-6. watch_list: 다음 주까지 모니터링할 구체적 지표 2~3개.
+3. bluf: HR 의사결정자가 가장 먼저 알아야 할 3문장.
+4. causal_narrative: "거시환경→노동규제→HR전략" 3층 인과 서사 (한 문단).
+5. hr_priorities: HR 부서 즉시 실행 과제 (urgency + owner 필수).
+6. risks: 3개 이하, 각각 hr_mitigation(HR 대응 방안) 포함.
+7. watch_list: 다음 주까지 모니터링할 HR 관련 구체적 지표 2~3개.
 
 {{"report": {_REPORT_SCHEMA}}}
 
@@ -871,13 +905,33 @@ def _mk_article(item, panel_color):
     """6단계 분석 기사 HTML 블록 생성."""
     strategic_opts_html = ""
     for opt in item.get('strategic_options', []):
+        timeline = f' <span style="color:#6b7280;font-size:11px;">[{opt.get("timeline", "")}]</span>' if opt.get("timeline") else ""
         strategic_opts_html += (
             f'<div style="margin-bottom:6px;">'
             f'<span style="font-weight:700;color:#333;">{opt.get("option", "")}</span> '
-            f'{opt.get("action", "")} '
+            f'{opt.get("action", "")}{timeline} '
             f'<span style="color:#999;font-size:12px;">(tradeoff: {opt.get("tradeoff", "")})</span>'
             f'</div>'
         )
+
+    # hr_impact: 새 스키마(dict) 또는 구 스키마(business_impact str) 모두 처리
+    hr_impact = item.get('hr_impact')
+    if hr_impact and isinstance(hr_impact, dict):
+        hr_labels = [
+            ('workforce_planning', '인력기획'),
+            ('total_rewards', '총보상'),
+            ('employee_relations', '노사관계'),
+            ('org_capability', '조직역량'),
+        ]
+        hr_content = "".join(
+            f'<div style="margin-bottom:4px;">'
+            f'<span style="font-weight:700;color:#555;">{kr}:</span> {hr_impact[k]}'
+            f'</div>'
+            for k, kr in hr_labels if hr_impact.get(k)
+        )
+    else:
+        # 폴백: 구 스키마 호환 (make_smart_fallback 등)
+        hr_content = item.get('business_impact', '')
 
     return f"""
     <div style="margin-bottom:28px;">
@@ -905,9 +959,9 @@ def _mk_article(item, panel_color):
         </div>
         <div style="margin-bottom:10px;">
             <span style="font-size:10px;font-weight:700;color:{panel_color};
-                         letter-spacing:0.8px;">BUSINESS IMPACT</span>
+                         letter-spacing:0.8px;">HR IMPACT</span>
             <div style="font-size:14px;color:#333;line-height:1.8;margin-top:3px;">
-                {item.get('business_impact', '')}
+                {hr_content}
             </div>
         </div>
         <div style="background:#F5F5F5;padding:12px 14px;border-radius:4px;margin-bottom:10px;">
@@ -972,19 +1026,59 @@ def build_html(today, panel_a, panel_b, panel_c, business_report, company_html):
             f'<li style="margin-bottom:6px;font-weight:600;">{s}</li>'
             for s in business_report.get('bluf', [])
         )
-        risks_rows = "".join(
-            f'<tr>'
-            f'<td style="padding:6px 10px;border-bottom:1px solid #e5e7eb;font-size:13px;">'
-            f'{r.get("risk","")}</td>'
-            f'<td style="padding:6px 10px;border-bottom:1px solid #e5e7eb;font-size:12px;'
-            f'text-align:center;color:{"#dc2626" if r.get("likelihood")=="High" else "#d97706"};">'
-            f'{r.get("likelihood","")}</td>'
-            f'<td style="padding:6px 10px;border-bottom:1px solid #e5e7eb;font-size:12px;'
-            f'text-align:center;color:{"#dc2626" if r.get("impact")=="High" else "#d97706"};">'
-            f'{r.get("impact","")}</td>'
-            f'</tr>'
-            for r in business_report.get('risks', [])
-        )
+        def _risk_row(r):
+            mitigation = r.get("hr_mitigation", "")
+            mit_html = (
+                '<div style="font-size:11px;color:#6b7280;margin-top:2px;">HR 대응: '
+                + mitigation + '</div>'
+            ) if mitigation else ""
+            l_color = "#dc2626" if r.get("likelihood") == "High" else "#d97706"
+            i_color = "#dc2626" if r.get("impact") == "High" else "#d97706"
+            return (
+                f'<tr>'
+                f'<td style="padding:6px 10px;border-bottom:1px solid #e5e7eb;font-size:13px;">'
+                f'{r.get("risk","")}{mit_html}</td>'
+                f'<td style="padding:6px 10px;border-bottom:1px solid #e5e7eb;font-size:12px;'
+                f'text-align:center;color:{l_color};">{r.get("likelihood","")}</td>'
+                f'<td style="padding:6px 10px;border-bottom:1px solid #e5e7eb;font-size:12px;'
+                f'text-align:center;color:{i_color};">{r.get("impact","")}</td>'
+                f'</tr>'
+            )
+        risks_rows = "".join(_risk_row(r) for r in business_report.get('risks', []))
+        hr_priorities_html = ""
+        hr_priorities = business_report.get('hr_priorities', [])
+        if hr_priorities:
+            urgency_colors = {"즉시": "#dc2626", "1개월": "#d97706", "분기": "#2563eb"}
+            priority_rows = "".join(
+                f'<tr>'
+                f'<td style="padding:6px 10px;border-bottom:1px solid #e5e7eb;font-size:13px;">'
+                f'{p.get("priority","")}</td>'
+                f'<td style="padding:6px 10px;border-bottom:1px solid #e5e7eb;font-size:12px;'
+                f'text-align:center;color:{urgency_colors.get(p.get("urgency",""), "#333")};">'
+                f'{p.get("urgency","")}</td>'
+                f'<td style="padding:6px 10px;border-bottom:1px solid #e5e7eb;font-size:12px;'
+                f'text-align:center;color:#555;">{p.get("owner","")}</td>'
+                f'</tr>'
+                for p in hr_priorities
+            )
+            hr_priorities_html = f"""
+            <div style="margin-bottom:14px;">
+                <span style="font-size:10px;font-weight:700;color:{p_d_color};
+                             letter-spacing:0.8px;">HR PRIORITIES</span>
+                <table style="width:100%;border-collapse:collapse;margin-top:8px;">
+                    <thead>
+                        <tr style="background:#ede9fe;">
+                            <th style="padding:6px 10px;text-align:left;font-size:11px;
+                                       color:{p_d_color};">과제</th>
+                            <th style="padding:6px 10px;text-align:center;font-size:11px;
+                                       color:{p_d_color};width:70px;">긴급도</th>
+                            <th style="padding:6px 10px;text-align:center;font-size:11px;
+                                       color:{p_d_color};width:90px;">담당</th>
+                        </tr>
+                    </thead>
+                    <tbody>{priority_rows}</tbody>
+                </table>
+            </div>"""
         watch_items = "".join(
             f'<span style="display:inline-block;background:#f3f4f6;border:1px solid #d1d5db;'
             f'border-radius:3px;padding:3px 10px;font-size:12px;margin:2px;">{w}</span>'
@@ -1021,6 +1115,7 @@ def build_html(today, panel_a, panel_b, panel_c, business_report, company_html):
                     {business_report.get('key_variable','')}
                 </span>
             </div>
+            {hr_priorities_html}
             <div style="margin-bottom:14px;">
                 <span style="font-size:10px;font-weight:700;color:{p_d_color};
                              letter-spacing:0.8px;">RISKS</span>
@@ -1166,7 +1261,7 @@ def run_newsletter():
 
     # Step 4: Panel A AI 분석
     logger.info("3. AI 분석 시작 (Panel A)...")
-    final_a, a_err = analyze_panel(api_key, panel_a_news[:6], "PANEL_A") if panel_a_news else ([], None)
+    final_a, a_err = analyze_panel(api_key, panel_a_news[:6], "PANEL_A", today_str=today) if panel_a_news else ([], None)
     a_is_fallback = False
     if not final_a:
         final_a, a_is_fallback = make_smart_fallback(panel_a_news, "PANEL_A", a_err)
@@ -1175,7 +1270,7 @@ def run_newsletter():
     logger.info("3. AI 분석 시작 (Panel B)...")
     if panel_a_news:
         time.sleep(8)
-    final_b, b_err = analyze_panel(api_key, panel_b_news[:6], "PANEL_B") if panel_b_news else ([], None)
+    final_b, b_err = analyze_panel(api_key, panel_b_news[:6], "PANEL_B", today_str=today) if panel_b_news else ([], None)
     b_is_fallback = False
     if not final_b:
         final_b, b_is_fallback = make_smart_fallback(panel_b_news, "PANEL_B", b_err)
@@ -1184,7 +1279,7 @@ def run_newsletter():
     logger.info("3. AI 분석 시작 (Panel C)...")
     if panel_b_news:
         time.sleep(8)
-    final_c, c_err = analyze_panel(api_key, panel_c_news[:6], "PANEL_C") if panel_c_news else ([], None)
+    final_c, c_err = analyze_panel(api_key, panel_c_news[:6], "PANEL_C", today_str=today) if panel_c_news else ([], None)
     c_is_fallback = False
     if not final_c:
         final_c, c_is_fallback = make_smart_fallback(panel_c_news, "PANEL_C", c_err)
@@ -1196,7 +1291,7 @@ def run_newsletter():
         logger.info("Gemini rate limit 보호: 10초 대기...")
         time.sleep(10)
         business_report = generate_business_report(
-            api_key, panel_a_news[:4], panel_b_news[:4], panel_c_news[:4]
+            api_key, panel_a_news[:4], panel_b_news[:4], panel_c_news[:4], today_str=today
         )
     else:
         logger.info(f"비즈니스 리포트 스킵: 기사 {total_articles}건 (최소 3건 필요)")
