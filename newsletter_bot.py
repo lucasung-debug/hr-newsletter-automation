@@ -250,6 +250,8 @@ INDUSTRY_PROFILES = {
                 "panel": "PANEL_B",
             },
         ],
+        "company_news_keywords": ["오뚜기 신제품", "오뚜기라면 신제품", "오뚜기 출시"],
+        "company_filter_keyword": "오뚜기",
     }
 }
 
@@ -335,7 +337,9 @@ def filter_by_relevance(news_list, panel_id, min_score=0.4):
     removed = len(news_list) - len(filtered)
     if removed:
         logger.info(f"  관련도 필터: {panel_id} {removed}건 제거 (총 {len(filtered)}건 유지)")
-    return [n for n, s in filtered]
+    for n, s in filtered:
+        n['relevance_score'] = round(s, 3)
+    return [n for n, _ in filtered]
 
 
 def dedup_across_panels(panel_a, panel_b, panel_c):
@@ -824,16 +828,18 @@ def check_company_news_reply(app_password):
 
 
 def fetch_company_fallback_news():
-    """회신 없을 때: 오뚜기 신제품 뉴스 검색."""
+    """회신 없을 때: INDUSTRY_PROFILE의 company_news_keywords로 회사 뉴스 검색."""
     client_id = os.environ.get('NAVER_CLIENT_ID')
     client_secret = os.environ.get('NAVER_CLIENT_SECRET')
     if not client_id or not client_secret:
         return []
 
+    keywords = PROFILE.get('company_news_keywords', ["오뚜기 신제품", "오뚜기라면 신제품", "오뚜기 출시"])
+    filter_kw = PROFILE.get('company_filter_keyword', "오뚜기")
     url = "https://openapi.naver.com/v1/search/news.json"
     headers = {"X-Naver-Client-Id": client_id, "X-Naver-Client-Secret": client_secret}
     results = []
-    for kw in ["오뚜기 신제품", "오뚜기라면 신제품", "오뚜기 출시"]:
+    for kw in keywords:
         try:
             resp = requests.get(
                 url, headers=headers,
@@ -843,7 +849,7 @@ def fetch_company_fallback_news():
             if resp.status_code == 200:
                 for item in resp.json().get('items', []):
                     t = clean_html(item['title'])
-                    if "오뚜기" not in t:
+                    if filter_kw not in t:
                         continue
                     if not is_near_duplicate(t, {r['title'] for r in results}):
                         results.append({
@@ -1218,7 +1224,9 @@ def run_newsletter():
 
     # Step 4: Panel A AI 분석
     logger.info("3. AI 분석 시작 (Panel A)...")
+    _t0 = time.time()
     final_a, a_err = analyze_panel(api_key, panel_a_news[:6], "PANEL_A") if panel_a_news else ([], None)
+    logger.info(f"  Panel A 분석 완료: {time.time() - _t0:.1f}s")
     a_is_fallback = False
     if not final_a:
         final_a, a_is_fallback = make_smart_fallback(panel_a_news, "PANEL_A", a_err)
@@ -1227,7 +1235,9 @@ def run_newsletter():
     logger.info("3. AI 분석 시작 (Panel B)...")
     if panel_a_news:
         time.sleep(8)
+    _t0 = time.time()
     final_b, b_err = analyze_panel(api_key, panel_b_news[:6], "PANEL_B") if panel_b_news else ([], None)
+    logger.info(f"  Panel B 분석 완료: {time.time() - _t0:.1f}s")
     b_is_fallback = False
     if not final_b:
         final_b, b_is_fallback = make_smart_fallback(panel_b_news, "PANEL_B", b_err)
@@ -1236,7 +1246,9 @@ def run_newsletter():
     logger.info("3. AI 분석 시작 (Panel C)...")
     if panel_b_news:
         time.sleep(8)
+    _t0 = time.time()
     final_c, c_err = analyze_panel(api_key, panel_c_news[:6], "PANEL_C") if panel_c_news else ([], None)
+    logger.info(f"  Panel C 분석 완료: {time.time() - _t0:.1f}s")
     c_is_fallback = False
     if not final_c:
         final_c, c_is_fallback = make_smart_fallback(panel_c_news, "PANEL_C", c_err)
@@ -1244,14 +1256,14 @@ def run_newsletter():
     # Step 7: Panel D 비즈니스 리포트
     total_articles = len(panel_a_news) + len(panel_b_news) + len(panel_c_news)
     business_report = None
-    if total_articles >= 3:
+    if total_articles >= 2:
         logger.info("Gemini rate limit 보호: 10초 대기...")
         time.sleep(10)
         business_report = generate_business_report(
             api_key, panel_a_news[:4], panel_b_news[:4], panel_c_news[:4]
         )
     else:
-        logger.info(f"비즈니스 리포트 스킵: 기사 {total_articles}건 (최소 3건 필요)")
+        logger.info(f"비즈니스 리포트 스킵: 기사 {total_articles}건 (최소 2건 필요)")
 
     # Step 8: 품질 게이트
     logger.info("4. 품질 게이트 검증...")
@@ -1310,16 +1322,18 @@ def run_newsletter():
         subject = f"[{today}] Weekly HR Brief (Light) - 오뚜기라면"
     else:
         subject = f"[{today}] Weekly HR Strategic Intelligence - 오뚜기라면"
-    send_email(app_password, recipients, subject, html)
+    failed_recipients = send_email(app_password, recipients, subject, html)
 
-    # 실행 요약 로그
-    logger.info("=== Newsletter Summary ===")
-    logger.info(f"  Panel A: {len(panel_a_news)} fetched → {len(final_a)} in newsletter (fallback={a_is_fallback})")
-    logger.info(f"  Panel B: {len(panel_b_news)} fetched → {len(final_b)} in newsletter (fallback={b_is_fallback})")
-    logger.info(f"  Panel C: {len(panel_c_news)} fetched → {len(final_c)} in newsletter (fallback={c_is_fallback})")
-    logger.info(f"  Business report: {'생성됨' if business_report else '실패'}")
-    logger.info(f"  Edition: {edition_type}")
-    logger.info(f"  Warnings: {warnings if warnings else 'none'}")
+    # [RUN SUMMARY] 구조화 실행 요약
+    fallback_count = sum([a_is_fallback, b_is_fallback, c_is_fallback])
+    send_result = "ok" if not failed_recipients else f"failed={failed_recipients}"
+    logger.info(
+        f"[RUN SUMMARY] "
+        f"수집=A{len(panel_a_news)}/B{len(panel_b_news)}/C{len(panel_c_news)} "
+        f"패널결과=A{len(final_a)}/B{len(final_b)}/C{len(final_c)} "
+        f"폴백={fallback_count} report={'ok' if business_report else 'skip'} "
+        f"edition={edition_type} 발송={send_result}"
+    )
     logger.info("뉴스레터 발송 완료")
 
 
@@ -1401,8 +1415,68 @@ def save_report_json(today_str, panel_a, panel_b, panel_c, business_report,
         with open(index_path, "w", encoding="utf-8") as f:
             json.dump(index, f, ensure_ascii=False, indent=2)
         logger.info("index.json 업데이트 완료")
+
+        # latest.md 생성 (NotebookLM raw URL 소비용)
+        generate_latest_md(today_str, panel_a, panel_b, panel_c, business_report)
     except Exception as e:
         logger.error(f"JSON 저장 실패: {e}")
+
+
+def generate_latest_md(today_str, panel_a, panel_b, panel_c, business_report):
+    """data/reports/latest.md 생성 — NotebookLM이 raw URL로 소비 가능한 최신 리포트 요약."""
+    try:
+        panel_labels = {
+            "panel_a": PROFILE.get("panel_labels", {}).get("PANEL_A", "국제 MACRO"),
+            "panel_b": PROFILE.get("panel_labels", {}).get("PANEL_B", "한국 MICRO"),
+            "panel_c": PROFILE.get("panel_labels", {}).get("PANEL_C", "산업·회사"),
+        }
+        lines = [f"# HR Strategic Intelligence — {today_str}\n"]
+
+        for label_key, articles in [("panel_a", panel_a), ("panel_b", panel_b), ("panel_c", panel_c)]:
+            label = panel_labels[label_key]
+            lines.append(f"\n## {label}\n")
+            for item in (articles or []):
+                headline = item.get("headline") or item.get("title", "")
+                signal = item.get("signal_strength", "")
+                fact = item.get("fact", "")
+                so_what = item.get("so_what", "")
+                decision = item.get("decision_point", "")
+                lines.append(f"### [{signal}] {headline}")
+                if fact:
+                    lines.append(f"- **팩트:** {fact}")
+                if so_what:
+                    lines.append(f"- **So What:** {so_what}")
+                if decision:
+                    lines.append(f"- **결정 포인트:** {decision}")
+                lines.append("")
+
+        if business_report:
+            lines.append("\n## 비즈니스 리포트 (Panel D)\n")
+            bluf = business_report.get("bluf", [])
+            if bluf:
+                lines.append("**BLUF:**")
+                for b in bluf:
+                    lines.append(f"- {b}")
+            direction = business_report.get("direction", "")
+            direction_reason = business_report.get("direction_reason", "")
+            if direction:
+                lines.append(f"\n**방향:** {direction} — {direction_reason}")
+            narrative = business_report.get("causal_narrative", "")
+            if narrative:
+                lines.append(f"\n**인과 서사:** {narrative}")
+            decision = business_report.get("decision_point", "")
+            if decision:
+                lines.append(f"\n**결정 포인트:** {decision}")
+            watch = business_report.get("watch_list", [])
+            if watch:
+                lines.append(f"\n**감시 지표:** {', '.join(watch)}")
+
+        md_path = "data/reports/latest.md"
+        with open(md_path, "w", encoding="utf-8") as f:
+            f.write("\n".join(lines) + "\n")
+        logger.info(f"latest.md 생성 완료: {md_path}")
+    except Exception as e:
+        logger.error(f"latest.md 생성 실패: {e}")
 
 
 if __name__ == "__main__":
