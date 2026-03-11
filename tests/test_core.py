@@ -6,6 +6,7 @@ import os
 import sys
 import unittest
 from unittest.mock import patch
+import requests
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -185,6 +186,115 @@ class TestDedupAcrossPanels(unittest.TestCase):
         panel_c = [self._art("오뚜기 라면 글로벌 수출")]  # duplicate of A
         _, _, deduped_c = nb.dedup_across_panels(panel_a, panel_b, panel_c)
         self.assertEqual(len(deduped_c), 0)
+
+
+class TestCallGemini(unittest.TestCase):
+    def test_gemini_success(self):
+        """Gemini API 정상 응답 테스트."""
+        mock_response = {
+            "candidates": [{
+                "content": {
+                    "parts": [{
+                        "text": '{"signal_strength": "High", "fact": "Test fact"}'
+                    }]
+                }
+            }]
+        }
+        mock_res = unittest.mock.MagicMock()
+        mock_res.status_code = 200
+        mock_res.json.return_value = mock_response
+
+        with patch('requests.post') as mock_post:
+            mock_post.return_value = mock_res
+            result, error = nb.call_gemini(
+                "test-api-key",
+                "test prompt",
+                max_retries=3
+            )
+            self.assertIsNotNone(result)
+            self.assertIsNone(error)
+            self.assertIn("signal_strength", result)
+
+    def test_gemini_retry_on_timeout(self):
+        """Gemini API 타임아웃 재시도 로직 테스트."""
+        mock_response = {
+            "candidates": [{
+                "content": {"parts": [{"text": '{"signal_strength": "Medium"}'}]}
+            }]
+        }
+        mock_res = unittest.mock.MagicMock()
+        mock_res.status_code = 200
+        mock_res.json.return_value = mock_response
+
+        with patch('requests.post') as mock_post:
+            # 첫 2번 타임아웃, 3번째 성공
+            mock_post.side_effect = [
+                unittest.mock.Mock(side_effect=requests.exceptions.Timeout()),
+                unittest.mock.Mock(side_effect=requests.exceptions.Timeout()),
+                mock_res
+            ]
+            result, error = nb.call_gemini(
+                "test-api-key",
+                "test prompt",
+                max_retries=3
+            )
+            # 3번째 시도에서 성공해야 함
+            self.assertEqual(mock_post.call_count, 3)
+
+
+class TestFetchNews(unittest.TestCase):
+    def test_fetch_news_returns_list(self):
+        """Naver API 응답이 리스트를 반환하는지 테스트."""
+        with patch('requests.get') as mock_get:
+            # Naver API 모의 응답
+            mock_response = {
+                "items": [
+                    {
+                        "title": "오뚜기 신제품 출시",
+                        "link": "https://example.com/1",
+                        "originallink": "https://original.com/1",
+                        "description": "신제품 설명",
+                        "pubDate": "Wed, 12 Mar 2026 10:00:00 +0900"
+                    }
+                ]
+            }
+            mock_res = unittest.mock.MagicMock()
+            mock_res.json.return_value = mock_response
+            mock_res.status_code = 200
+            mock_get.return_value = mock_res
+
+            result = nb.fetch_news("PANEL_C", nb.PROFILE["PANEL_C"])
+            self.assertIsInstance(result, list)
+
+
+class TestAnalyzePanelFallback(unittest.TestCase):
+    def test_analyze_panel_success(self):
+        """analyze_panel 정상 작동 테스트."""
+        mock_response = {
+            "candidates": [{
+                "content": {"parts": [{"text": '{"signal_strength": "High"}'}]}
+            }]
+        }
+        articles = [
+            {
+                "title": "테스트 기사",
+                "desc": "테스트 설명",
+                "link": "https://example.com"
+            }
+        ]
+        mock_res = unittest.mock.MagicMock()
+        mock_res.status_code = 200
+        mock_res.json.return_value = mock_response
+
+        with patch('requests.post') as mock_post:
+            mock_post.return_value = mock_res
+            result, error = nb.analyze_panel(
+                "test-api-key",
+                articles,
+                "PANEL_A"
+            )
+            # 정상 작동하면 결과가 반환되어야 함
+            self.assertIsNotNone(result)
 
 
 if __name__ == "__main__":

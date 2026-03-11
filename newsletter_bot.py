@@ -627,33 +627,69 @@ def make_smart_fallback(news_list, panel_id, error_type=None):
 # 8. Panel D — 비즈니스 리포트 (Phase 1)
 # ============================================================
 def generate_business_report(api_key, panel_a_news, panel_b_news, panel_c_news):
-    """3축(A·B·C) 교차 통합 비즈니스 리포트 생성 (Panel D)."""
+    """3축(A·B·C) 교차 통합 비즈니스 리포트 생성 (Panel D) — 패널 개수별 동적 프롬프트."""
     def fmt_panel(label, news):
         lines = f"--- {label} ---\n"
         for i, n in enumerate(news):
             lines += f"[{i}] {n['title']} | {n['desc']}\n"
         return lines
 
-    all_ctx = fmt_panel("Panel A — 국제 MACRO", panel_a_news)
-    all_ctx += "\n" + fmt_panel("Panel B — 한국 MICRO", panel_b_news)
-    all_ctx += "\n" + fmt_panel("Panel C — 산업·회사", panel_c_news)
+    # 패널 개수 계산
+    panel_count = sum([len(panel_a_news) > 0, len(panel_b_news) > 0, len(panel_c_news) > 0])
 
-    prompt = f"""당신은 BCG/Goldman Sachs 30년 경력 수석 컨설턴트입니다.
+    all_ctx = ""
+    if panel_a_news:
+        all_ctx += fmt_panel("Panel A — 국제 MACRO", panel_a_news)
+    if panel_b_news:
+        if all_ctx:
+            all_ctx += "\n"
+        all_ctx += fmt_panel("Panel B — 한국 MICRO", panel_b_news)
+    if panel_c_news:
+        if all_ctx:
+            all_ctx += "\n"
+        all_ctx += fmt_panel("Panel C — 산업·회사", panel_c_news)
 
-[회사 컨텍스트]
-{COMPANY_CONTEXT}
-
-[분석 프레임워크]
+    # 패널 개수별 동적 프롬프트
+    if panel_count >= 3:
+        # 3층 분석: 전체 인과 프레임워크
+        framework = """[분석 프레임워크]
 Layer 1 (Panel A): 이번 주 글로벌에서 무슨 일이 일어났는가?
 Layer 2 (Panel B): 한국은 어떻게 반응했/반응할 것인가?
 Layer 3 (Panel C): 오뚜기라면은 어디에 노출되었는가?
 통합 질문: 세 층위가 같은 방향으로 수렴(Converging)하는가, 상쇄(Diverging)하는가, 불확실(Ambiguous)한가?
 
 [필수 규칙]
-1. 반드시 아래 JSON 형식만 출력하세요. 마크다운 불가.
-2. 뉴스에 없는 사실·수치를 만들어내지 마세요. 추정 시 "(추정)" 명시.
-3. bluf: Bottom Line Up Front — 의사결정자가 가장 먼저 알아야 할 3문장.
-4. causal_narrative: "A→B→C" 3층 인과 서사 (한 문단).
+1. causal_narrative는 "A→B→C" 3층 인과 서사로 작성하세요."""
+    elif panel_count == 2:
+        # 2층 분석: 두 층 사이의 인과관계
+        framework = """[분석 프레임워크]
+제시된 2개 패널 간 인과관계를 분석하세요.
+- MACRO→MICRO: 글로벌 동향이 한국에 미치는 영향
+- MACRO→산업: 글로벌 이슈가 식품·제조산업에 미치는 영향
+- MICRO→산업: 한국 경제정책이 오뚜기라면에 미치는 영향
+
+[필수 규칙]
+1. causal_narrative는 "X→Y" 2층 인과 서사로 작성하세요."""
+    else:
+        # 1층 심화 분석: 단일 패널 deep-dive
+        framework = """[분석 프레임워크]
+제시된 1개 패널에 대해 심화 분석하세요.
+- 오뚜기라면에 미치는 직접적 영향을 구체적으로 분석
+- 가능한 대응 전략 3~4개 도출
+- 불확실 요소와 모니터링 대상 명시
+
+[필수 규칙]
+1. causal_narrative는 이슈의 구체적 전개와 영향을 한 문단으로 작성하세요."""
+
+    prompt = f"""당신은 BCG/Goldman Sachs 30년 경력 수석 컨설턴트입니다.
+
+[회사 컨텍스트]
+{COMPANY_CONTEXT}
+
+{framework}
+2. 반드시 아래 JSON 형식만 출력하세요. 마크다운 불가.
+3. 뉴스에 없는 사실·수치를 만들어내지 마세요. 추정 시 "(추정)" 명시.
+4. bluf: Bottom Line Up Front — 의사결정자가 가장 먼저 알아야 할 3문장.
 5. risks: 3개 이하.
 6. watch_list: 다음 주까지 모니터링할 구체적 지표 2~3개.
 
@@ -662,7 +698,7 @@ Layer 3 (Panel C): 오뚜기라면은 어디에 노출되었는가?
 이번 주 뉴스 데이터:
 {all_ctx}"""
 
-    logger.info("Panel D 비즈니스 리포트 생성 중...")
+    logger.info(f"Panel D 비즈니스 리포트 생성 중 (패널 {panel_count}개)...")
     raw, err = call_gemini(api_key, prompt)
     if raw:
         parsed = extract_json_from_text(raw)
@@ -670,7 +706,7 @@ Layer 3 (Panel C): 오뚜기라면은 어디에 노출되었는가?
             # {"report": {...}} 또는 직접 {...} 형태 모두 처리
             report = parsed.get('report') if isinstance(parsed.get('report'), dict) else parsed
             if isinstance(report, dict) and report.get('bluf') and report.get('direction'):
-                logger.info(f"비즈니스 리포트 생성 완료: direction={report['direction']}")
+                logger.info(f"비즈니스 리포트 생성 완료: direction={report['direction']} (패널 {panel_count}개)")
                 return report
         logger.error(f"리포트 JSON 파싱 실패 — raw 앞 300자: {raw[:300]}")
     else:
@@ -1183,12 +1219,32 @@ def validate_environment(mode='newsletter'):
     logger.info(f"환경변수 검증 완료 (mode={mode})")
 
 
+def validate_profile_schema(profile_key, profile_dict):
+    """INDUSTRY_PROFILE 필수 키 검증. 누락 시 ValueError 발생."""
+    required = [
+        "PANEL_A", "PANEL_B", "PANEL_C",
+        "relevance",
+        "analyst_roles",
+        "panel_labels",
+        "selection_rules",
+        "rss_feeds",
+        "company_news_keywords",
+        "company_filter_keyword"
+    ]
+    missing = [k for k in required if k not in profile_dict]
+    if missing:
+        logger.error(f"프로파일 {profile_key} 스키마 누락: {missing}")
+        raise ValueError(f"프로파일 {profile_key} 필수 키 누락: {missing}")
+    logger.info(f"프로파일 스키마 검증 완료: {profile_key}")
+
+
 # ============================================================
 # 13. 메인 실행 (Phase 1 — 4-Panel Weekly)
 # ============================================================
 def run_newsletter():
     """매주 수요일 뉴스레터 메인 실행 (4-Panel)."""
     validate_environment('newsletter')
+    validate_profile_schema('FOOD_MFG', PROFILE)
     api_key = os.environ.get('GEMINI_API_KEY')
     app_password = os.environ.get('GMAIL_APP_PASSWORD')
     recipient_str = os.environ.get('RECIPIENT_EMAILS', 'tjdaudwo21@otokirm.com')
@@ -1202,9 +1258,14 @@ def run_newsletter():
     panel_a_news = fetch_news("PANEL_A", PROFILE["PANEL_A"])
     panel_b_news = fetch_news("PANEL_B", PROFILE["PANEL_B"]) + fetch_rss_news("PANEL_B")
     panel_c_news = fetch_news("PANEL_C", PROFILE["PANEL_C"])
+
+    # 수집 단계 카운터
+    a_fetched = len(panel_a_news)
+    b_fetched = len(panel_b_news)
+    c_fetched = len(panel_c_news)
     logger.info(
-        f"수집 완료: Panel A {len(panel_a_news)}건, "
-        f"Panel B {len(panel_b_news)}건, Panel C {len(panel_c_news)}건"
+        f"수집 완료: Panel A {a_fetched}건, "
+        f"Panel B {b_fetched}건, Panel C {c_fetched}건"
     )
 
     # Step 2: 관련도 필터링
@@ -1212,6 +1273,26 @@ def run_newsletter():
     panel_a_news = filter_by_relevance(panel_a_news, "PANEL_A")
     panel_b_news = filter_by_relevance(panel_b_news, "PANEL_B")
     panel_c_news = filter_by_relevance(panel_c_news, "PANEL_C")
+
+    # 필터링 후 카운터 및 필터율 계산
+    a_after_filter = len(panel_a_news)
+    b_after_filter = len(panel_b_news)
+    c_after_filter = len(panel_c_news)
+
+    a_filter_rate = 0 if a_fetched == 0 else int(100 * (a_fetched - a_after_filter) / a_fetched)
+    b_filter_rate = 0 if b_fetched == 0 else int(100 * (b_fetched - b_after_filter) / b_fetched)
+    c_filter_rate = 0 if c_fetched == 0 else int(100 * (c_fetched - c_after_filter) / c_fetched)
+
+    # 상위 3개 점수 추출
+    a_top_scores = [n.get('relevance_score', 0) for n in panel_a_news[:3]]
+    b_top_scores = [n.get('relevance_score', 0) for n in panel_b_news[:3]]
+    c_top_scores = [n.get('relevance_score', 0) for n in panel_c_news[:3]]
+
+    logger.info(
+        f"필터 후: Panel A {a_after_filter}건 (필터율 {a_filter_rate}%, 상위 점수 {a_top_scores}), "
+        f"Panel B {b_after_filter}건 (필터율 {b_filter_rate}%, 상위 점수 {b_top_scores}), "
+        f"Panel C {c_after_filter}건 (필터율 {c_filter_rate}%, 상위 점수 {c_top_scores})"
+    )
 
     # Step 3: 패널 간 교차 중복 제거
     panel_a_news, panel_b_news, panel_c_news = dedup_across_panels(
@@ -1324,12 +1405,14 @@ def run_newsletter():
         subject = f"[{today}] Weekly HR Strategic Intelligence - 오뚜기라면"
     failed_recipients = send_email(app_password, recipients, subject, html)
 
-    # [RUN SUMMARY] 구조화 실행 요약
+    # [RUN SUMMARY] 구조화 실행 요약 (필터링 통계 포함)
     fallback_count = sum([a_is_fallback, b_is_fallback, c_is_fallback])
     send_result = "ok" if not failed_recipients else f"failed={failed_recipients}"
     logger.info(
         f"[RUN SUMMARY] "
-        f"수집=A{len(panel_a_news)}/B{len(panel_b_news)}/C{len(panel_c_news)} "
+        f"수집=A{a_fetched}/B{b_fetched}/C{c_fetched} "
+        f"필터율=A{a_filter_rate}%/B{b_filter_rate}%/C{c_filter_rate}% "
+        f"상위점수=A{a_top_scores}/B{b_top_scores}/C{c_top_scores} "
         f"패널결과=A{len(final_a)}/B{len(final_b)}/C{len(final_c)} "
         f"폴백={fallback_count} report={'ok' if business_report else 'skip'} "
         f"edition={edition_type} 발송={send_result}"
@@ -1441,7 +1524,11 @@ def generate_latest_md(today_str, panel_a, panel_b, panel_c, business_report):
                 fact = item.get("fact", "")
                 so_what = item.get("so_what", "")
                 decision = item.get("decision_point", "")
-                lines.append(f"### [{signal}] {headline}")
+                link = item.get("link", "")
+                if link:
+                    lines.append(f"### [{signal}] [{headline}]({link})")
+                else:
+                    lines.append(f"### [{signal}] {headline}")
                 if fact:
                     lines.append(f"- **팩트:** {fact}")
                 if so_what:
