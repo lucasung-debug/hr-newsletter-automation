@@ -186,6 +186,15 @@ INDUSTRY_PROFILES = {
             "오뚜기 신제품 매출",
             "라면 시장 소비 트렌드",
         ],
+        "PANEL_E": [
+            "생성형 AI 업무활용 기업",
+            "ChatGPT 엔터프라이즈 도입",
+            "HR 디지털 전환 AI",
+            "AI 자동화 제조업",
+            "식품산업 AI 디지털화",
+            "인사관리 AI 솔루션",
+            "LLM 기업 생산성",
+        ],
         "relevance": {
             "PANEL_A": {
                 "글로벌", "국제", "원자재", "밀가루", "팜유", "대두", "소맥",
@@ -204,16 +213,23 @@ INDUSTRY_PROFILES = {
                 "식품", "수출", "ESG", "윤리경영", "채용", "인사",
                 "신제품", "실적", "매출", "시장", "경쟁", "프리믹스",
             },
+            "PANEL_E": {
+                "AI", "ChatGPT", "생성형", "LLM", "자동화", "업무", "HR",
+                "디지털", "기업", "도입", "인사", "전환", "솔루션",
+                "제조", "식품", "생산성", "효율화",
+            },
         },
         "analyst_roles": {
             "PANEL_A": "Goldman Sachs 글로벌 리서치 애널리스트",
             "PANEL_B": "BCG Korea 시니어 컨설턴트",
             "PANEL_C": "오뚜기라면 HR 전략 애널리스트",
+            "PANEL_E": "AI & 디지털 전환 실무 컨설턴트",
         },
         "panel_labels": {
             "PANEL_A": "국제 MACRO — 글로벌 정치·경제·원자재",
             "PANEL_B": "한국 MICRO — 경제·노동·산업규제",
             "PANEL_C": "산업·회사 — 경쟁사·HR·수출·ESG",
+            "PANEL_E": "AI & 업무혁신 — 생성형AI, HR-Tech, 업무자동화",
         },
         "selection_rules": {
             "PANEL_A": (
@@ -230,6 +246,11 @@ INDUSTRY_PROFILES = {
                 "오뚜기, 경쟁사(농심·삼양·CJ·풀무원), 라면 수출, 식품업 ESG·HR, 시장 트렌드 등 "
                 "산업·회사 관련 뉴스만 선정하세요. "
                 "거시경제나 규제 뉴스는 Panel A/B 해당이므로 제외하세요."
+            ),
+            "PANEL_E": (
+                "생성형 AI(ChatGPT, Claude, Gemini), LLM, 업무자동화, HR-Tech, 디지털 전환 등 "
+                "경영지원팀·HR·전사 업무 효율화에 관련된 AI 트렌드·정책·기술 뉴스만 선정하세요. "
+                "순수 기술 논문이나 AI 기업 투자 뉴스는 제외하세요."
             ),
         },
         "rss_feeds": [
@@ -258,6 +279,7 @@ PANEL_COLORS = {
     "PANEL_B": "#15803d",  # 딥그린
     "PANEL_C": "#c2410c",  # 주황
     "PANEL_D": "#7c3aed",  # 보라
+    "PANEL_E": "#0e7490",  # 청록 (AI & 업무혁신)
 }
 
 # 6단계 분석 스키마 (프롬프트 삽입용)
@@ -357,7 +379,13 @@ def dedup_across_panels(panel_a, panel_b, panel_c):
 # 5. 뉴스 수집 (Naver API + 공공기관 RSS)
 # ============================================================
 def fetch_news(panel_id, keywords):
-    """Naver 뉴스 검색 API로 뉴스 수집. NEWS_COLLECTION_DAYS 환경변수로 기간 설정."""
+    """Naver 뉴스 검색 API로 뉴스 수집. NEWS_COLLECTION_DAYS 환경변수로 기간 설정.
+
+    개선사항 (Naver Search MCP 참고):
+    - HTTP 상태 코드별 로깅 (429/403/500 구별)
+    - timeout 명시적 설정 (30초)
+    - JSON 파싱 실패 원인 기록
+    """
     client_id = os.environ.get('NAVER_CLIENT_ID')
     client_secret = os.environ.get('NAVER_CLIENT_SECRET')
     if not client_id or not client_secret:
@@ -377,11 +405,29 @@ def fetch_news(panel_id, keywords):
             resp = requests.get(
                 url, headers=headers,
                 params={"query": kw, "display": 10, "sort": "date"},
-                timeout=10
+                timeout=30  # 개선: MCP 기준 30초
             )
-            if resp.status_code != 200:
+            if resp.status_code == 429:
+                logger.warning(f"Naver 429 rate limit ({panel_id}, keyword={kw}) — 대기 중...")
+                time.sleep(10)
                 continue
-            for item in resp.json().get('items', []):
+            elif resp.status_code == 403:
+                logger.error(f"Naver 403 인증 실패 ({panel_id}, keyword={kw})")
+                continue
+            elif resp.status_code == 500:
+                logger.warning(f"Naver 500 서버 오류 ({panel_id}, keyword={kw})")
+                continue
+            elif resp.status_code != 200:
+                logger.warning(f"Naver HTTP {resp.status_code} ({panel_id}, keyword={kw})")
+                continue
+
+            try:
+                items = resp.json().get('items', [])
+            except ValueError as e:
+                logger.error(f"Naver JSON 파싱 실패 ({panel_id}, keyword={kw}): {e}")
+                continue
+
+            for item in items:
                 try:
                     pd = parsedate_to_datetime(item['pubDate'])
                     if pd < limit:
@@ -397,9 +443,17 @@ def fetch_news(panel_id, keywords):
                         "source": "naver",
                     })
                     seen.add(t)
-                except Exception:
+                except Exception as e:
+                    logger.debug(f"Naver 항목 처리 실패 ({panel_id}): {e}")
                     continue
-        except Exception:
+        except requests.exceptions.Timeout:
+            logger.warning(f"Naver 타임아웃 ({panel_id}, keyword={kw})")
+            continue
+        except requests.exceptions.RequestException as e:
+            logger.warning(f"Naver 요청 오류 ({panel_id}, keyword={kw}): {e}")
+            continue
+        except Exception as e:
+            logger.error(f"Naver 수집 중 예기치 않은 오류 ({panel_id}): {e}")
             continue
 
     logger.info(f"  Naver 수집: {panel_id} {len(collected)}건 (최근 {days}일)")
@@ -941,8 +995,8 @@ def _mk_panel_header(panel_id, title):
     )
 
 
-def build_html(today, panel_a, panel_b, panel_c, business_report, company_html):
-    """4-Panel 주간 리포트 HTML 생성."""
+def build_html(today, panel_a, panel_b, panel_c, business_report, panel_e, company_html):
+    """5-Panel 주간 리포트 HTML 생성 (Panel E: AI & 업무혁신 신규)."""
 
     # Panel A
     p_a_color = PANEL_COLORS["PANEL_A"]
@@ -964,6 +1018,13 @@ def build_html(today, panel_a, panel_b, panel_c, business_report, company_html):
         p_c_html = "".join(_mk_article(item, p_c_color) for item in panel_c)
     else:
         p_c_html = '<p style="color:#999;font-size:13px;">금주 주요 산업·회사 뉴스가 없습니다.</p>'
+
+    # Panel E — AI & 업무혁신 (신규 Phase 1.1)
+    p_e_color = PANEL_COLORS.get("PANEL_E", "#0e7490")
+    if panel_e:
+        p_e_html = "".join(_mk_article(item, p_e_color) for item in panel_e)
+    else:
+        p_e_html = '<p style="color:#999;font-size:13px;">금주 주요 AI & 업무혁신 뉴스가 없습니다.</p>'
 
     # Panel D — 비즈니스 리포트
     p_d_color = PANEL_COLORS["PANEL_D"]
@@ -1083,6 +1144,10 @@ background:#FFF;color:#333;">
     {_mk_panel_header("PANEL_C", "PANEL C &mdash; 산업·회사 / 경쟁사·HR·수출·ESG")}
     {p_c_html}
 
+    <!-- Panel E -->
+    {_mk_panel_header("PANEL_E", "PANEL E &mdash; AI & 업무혁신 / 생성형AI, HR-Tech, 업무자동화")}
+    {p_e_html}
+
     <!-- Panel D -->
     {_mk_panel_header("PANEL_D", "PANEL D &mdash; 비즈니스 리포트 / 3축 통합 전략")}
     {p_d_html}
@@ -1144,9 +1209,11 @@ def run_newsletter():
     panel_a_news = fetch_news("PANEL_A", PROFILE["PANEL_A"])
     panel_b_news = fetch_news("PANEL_B", PROFILE["PANEL_B"]) + fetch_rss_news("PANEL_B")
     panel_c_news = fetch_news("PANEL_C", PROFILE["PANEL_C"])
+    panel_e_news = fetch_news("PANEL_E", PROFILE.get("PANEL_E", []))
     logger.info(
         f"수집 완료: Panel A {len(panel_a_news)}건, "
-        f"Panel B {len(panel_b_news)}건, Panel C {len(panel_c_news)}건"
+        f"Panel B {len(panel_b_news)}건, Panel C {len(panel_c_news)}건, "
+        f"Panel E {len(panel_e_news)}건"
     )
 
     # Step 2: 관련도 필터링
@@ -1154,14 +1221,16 @@ def run_newsletter():
     panel_a_news = filter_by_relevance(panel_a_news, "PANEL_A")
     panel_b_news = filter_by_relevance(panel_b_news, "PANEL_B")
     panel_c_news = filter_by_relevance(panel_c_news, "PANEL_C")
+    panel_e_news = filter_by_relevance(panel_e_news, "PANEL_E")
 
-    # Step 3: 패널 간 교차 중복 제거
+    # Step 3: 패널 간 교차 중복 제거 (Panel E는 독립적 분석)
     panel_a_news, panel_b_news, panel_c_news = dedup_across_panels(
         panel_a_news, panel_b_news, panel_c_news
     )
     logger.info(
         f"필터 후: Panel A {len(panel_a_news)}건, "
-        f"Panel B {len(panel_b_news)}건, Panel C {len(panel_c_news)}건"
+        f"Panel B {len(panel_b_news)}건, Panel C {len(panel_c_news)}건, "
+        f"Panel E {len(panel_e_news)}건"
     )
 
     # Step 4: Panel A AI 분석
@@ -1189,6 +1258,15 @@ def run_newsletter():
     if not final_c:
         final_c, c_is_fallback = make_smart_fallback(panel_c_news, "PANEL_C", c_err)
 
+    # Step 6-B: Panel E AI 분석 (신규 - AI & 업무혁신) — 8초 딜레이
+    logger.info("3. AI 분석 시작 (Panel E)...")
+    if panel_c_news:
+        time.sleep(8)
+    final_e, e_err = analyze_panel(api_key, panel_e_news[:6], "PANEL_E") if panel_e_news else ([], None)
+    e_is_fallback = False
+    if not final_e:
+        final_e, e_is_fallback = make_smart_fallback(panel_e_news, "PANEL_E", e_err)
+
     # Step 7: Panel D 비즈니스 리포트
     total_articles = len(panel_a_news) + len(panel_b_news) + len(panel_c_news)
     business_report = None
@@ -1203,8 +1281,8 @@ def run_newsletter():
 
     # Step 8: 품질 게이트
     logger.info("4. 품질 게이트 검증...")
-    panel_results = {"PANEL_A": final_a, "PANEL_B": final_b, "PANEL_C": final_c}
-    panel_is_fallback = {"PANEL_A": a_is_fallback, "PANEL_B": b_is_fallback, "PANEL_C": c_is_fallback}
+    panel_results = {"PANEL_A": final_a, "PANEL_B": final_b, "PANEL_C": final_c, "PANEL_E": final_e}
+    panel_is_fallback = {"PANEL_A": a_is_fallback, "PANEL_B": b_is_fallback, "PANEL_C": c_is_fallback, "PANEL_E": e_is_fallback}
     should_send, edition_type, warnings = quality_gate(panel_results, panel_is_fallback, business_report)
     for w in warnings:
         logger.warning(w)
@@ -1247,13 +1325,13 @@ def run_newsletter():
     # Step 10: JSON 저장
     save_report_json(
         today_str,
-        final_a, final_b, final_c, business_report,
-        raw_a=panel_a_news, raw_b=panel_b_news, raw_c=panel_c_news,
+        final_a, final_b, final_c, business_report, final_e,
+        raw_a=panel_a_news, raw_b=panel_b_news, raw_c=panel_c_news, raw_e=panel_e_news,
     )
 
     # Step 11: HTML 생성 & 발송
     logger.info("6. HTML 생성 & 발송...")
-    html = build_html(today, final_a, final_b, final_c, business_report, company_html)
+    html = build_html(today, final_a, final_b, final_c, business_report, final_e, company_html)
     if edition_type == "light":
         subject = f"[{today}] Weekly HR Brief (Light) - 오뚜기라면"
     else:
@@ -1265,6 +1343,7 @@ def run_newsletter():
     logger.info(f"  Panel A: {len(panel_a_news)} fetched → {len(final_a)} in newsletter (fallback={a_is_fallback})")
     logger.info(f"  Panel B: {len(panel_b_news)} fetched → {len(final_b)} in newsletter (fallback={b_is_fallback})")
     logger.info(f"  Panel C: {len(panel_c_news)} fetched → {len(final_c)} in newsletter (fallback={c_is_fallback})")
+    logger.info(f"  Panel E: {len(panel_e_news)} fetched → {len(final_e)} in newsletter (fallback={e_is_fallback})")
     logger.info(f"  Business report: {'생성됨' if business_report else '실패'}")
     logger.info(f"  Edition: {edition_type}")
     logger.info(f"  Warnings: {warnings if warnings else 'none'}")
@@ -1280,12 +1359,13 @@ def run_weekend_request():
 # ============================================================
 # 14. JSON 저장 (Phase 1 신규 — Phase 2 웹 대시보드 연동 준비)
 # ============================================================
-def save_report_json(today_str, panel_a, panel_b, panel_c, business_report,
-                     raw_a=None, raw_b=None, raw_c=None):
+def save_report_json(today_str, panel_a, panel_b, panel_c, business_report, panel_e=None,
+                     raw_a=None, raw_b=None, raw_c=None, raw_e=None):
     """data/reports/YYYY-MM-DD.json 저장 및 index.json 업데이트.
 
-    raw_a/b/c: 관련도 필터 + 교차 중복 제거 후, AI 선정 이전의 전체 수집 기사.
-               Phase 2 기사 스크랩 창고(/articles) 및 NotebookLM 공급용.
+    raw_a/b/c/e: 관련도 필터 + 교차 중복 제거 후, AI 선정 이전의 전체 수집 기사.
+                 Phase 2 기사 스크랩 창고(/articles) 및 NotebookLM 공급용.
+    panel_e: Panel E (AI & 업무혁신) — Phase 1.1 신규
     """
     try:
         os.makedirs("data/reports", exist_ok=True)
@@ -1296,11 +1376,13 @@ def save_report_json(today_str, panel_a, panel_b, panel_c, business_report,
                 "panel_a": raw_a or [],
                 "panel_b": raw_b or [],
                 "panel_c": raw_c or [],
+                "panel_e": raw_e or [],
             },
             "panel_a": panel_a,
             "panel_b": panel_b,
             "panel_c": panel_c,
             "panel_d": business_report,
+            "panel_e": panel_e or [],
         }
         report_path = f"data/reports/{today_str}.json"
         with open(report_path, "w", encoding="utf-8") as f:
@@ -1318,8 +1400,8 @@ def save_report_json(today_str, panel_a, panel_b, panel_c, business_report,
         # 이미 동일 날짜 있으면 덮어쓰기
         index["reports"] = [r for r in index["reports"] if r.get("date") != today_str]
 
-        # signal_strength 카운트 집계 (웹 뷰어 배지용)
-        all_items = list(panel_a or []) + list(panel_b or []) + list(panel_c or [])
+        # signal_strength 카운트 집계 (웹 뷰어 배지용) — Panel E 포함
+        all_items = list(panel_a or []) + list(panel_b or []) + list(panel_c or []) + list(panel_e or [])
         sig_counts = {"High": 0, "Medium": 0, "Low": 0}
         for _item in all_items:
             s = _item.get("signal_strength", "")
