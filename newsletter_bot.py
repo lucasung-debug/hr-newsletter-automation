@@ -131,7 +131,13 @@ def call_gemini(api_key, prompt, max_retries=3):
                 last_error = f"http_{res.status_code}"
                 time.sleep(5 * (attempt + 1))
                 continue
-            body = res.json()
+            try:
+                body = res.json()
+            except json.JSONDecodeError as e:
+                logger.error(f"Gemini JSON 파싱 실패 (시도 {attempt + 1}): {e}")
+                last_error = "json_decode_error"
+                time.sleep(5 * (attempt + 1))
+                continue
             candidates = body.get('candidates')
             if not candidates:
                 block_reason = body.get('promptFeedback', {}).get('blockReason', '')
@@ -769,7 +775,7 @@ def send_admin_alert(app_password, warnings):
     msg.attach(MIMEText(body, 'plain', 'utf-8'))
 
     try:
-        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=30) as server:
             server.login(SENDER_EMAIL, app_password)
             server.sendmail(SENDER_EMAIL, SENDER_EMAIL, msg.as_string())
         logger.info("관리자 알림 발송 완료")
@@ -781,10 +787,11 @@ def send_admin_alert(app_password, warnings):
 # 10. 회사 소식 (IMAP 회신 확인 / 토요일 요청)
 # ============================================================
 def send_news_request_email(app_password):
-    """토요일: 회사 소식 요청 메일을 개인메일로 발송."""
-    today = datetime.datetime.now(KST).strftime("%Y-%m-%d")
-    subject = f"[회사소식요청] {today}"
-    body = f"""안녕하세요, 성명재입니다.
+    """토요일: 회사 소식 요청 메일을 개인메일로 발송. timeout + 에러 처리."""
+    try:
+        today = datetime.datetime.now(KST).strftime("%Y-%m-%d")
+        subject = f"[회사소식요청] {today}"
+        body = f"""안녕하세요, 성명재입니다.
 
 이번 주 오뚜기라면 회사 소식이 있다면 이 메일에 회신해주세요.
 (신제품 출시, 조직 변경, 이벤트, 수상 등)
@@ -794,22 +801,30 @@ def send_news_request_email(app_password):
 ---
 Weekly HR Strategic Intelligence 자동 발송 시스템
 """
-    msg = MIMEMultipart()
-    msg['From'] = f"HR Brief Bot <{SENDER_EMAIL}>"
-    msg['To'] = SENDER_EMAIL
-    msg['Subject'] = subject
-    msg.attach(MIMEText(body, 'plain', 'utf-8'))
+        msg = MIMEMultipart()
+        msg['From'] = f"HR Brief Bot <{SENDER_EMAIL}>"
+        msg['To'] = SENDER_EMAIL
+        msg['Subject'] = subject
+        msg.attach(MIMEText(body, 'plain', 'utf-8'))
 
-    with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
-        server.login(SENDER_EMAIL, app_password)
-        server.sendmail(SENDER_EMAIL, SENDER_EMAIL, msg.as_string())
-    logger.info(f"토요일 회사소식 요청 메일 발송 완료: {subject}")
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=30) as server:
+            server.login(SENDER_EMAIL, app_password)
+            server.sendmail(SENDER_EMAIL, SENDER_EMAIL, msg.as_string())
+        logger.info(f"토요일 회사소식 요청 메일 발송 완료: {subject}")
+        return True
+    except smtplib.SMTPAuthenticationError as e:
+        logger.error(f"토요일 메일 SMTP 인증 실패: {e}")
+        return False
+    except (smtplib.SMTPException, OSError) as e:
+        logger.error(f"토요일 메일 발송 실패: {e}")
+        return False
 
 
 def check_company_news_reply(app_password):
-    """IMAP으로 [회사소식요청]에 대한 회신 확인. 있으면 본문 반환, 없으면 None."""
+    """IMAP으로 [회사소식요청]에 대한 회신 확인. timeout + try-finally로 logout 보장."""
+    mail = None
     try:
-        mail = imaplib.IMAP4_SSL("imap.gmail.com")
+        mail = imaplib.IMAP4_SSL("imap.gmail.com", timeout=30)
         mail.login(SENDER_EMAIL, app_password)
         mail.select("INBOX")
 
@@ -818,7 +833,6 @@ def check_company_news_reply(app_password):
         _, data = mail.search(None, f'(SINCE "{since_date}" SUBJECT "Re: [회사소식요청]")')
 
         if not data[0]:
-            mail.logout()
             return None
 
         # 가장 최근 메일
@@ -838,8 +852,6 @@ def check_company_news_reply(app_password):
             charset = msg.get_content_charset() or 'utf-8'
             body = msg.get_payload(decode=True).decode(charset, errors='replace')
 
-        mail.logout()
-
         # 회신 본문에서 인용 부분 제거
         lines = []
         for line in body.split('\n'):
@@ -851,9 +863,18 @@ def check_company_news_reply(app_password):
         if len(clean_body) > 10:
             return clean_body
         return None
-    except Exception as e:
-        logger.error(f"IMAP 확인 실패: {e}")
+    except (imaplib.IMAP4.error, OSError, TimeoutError) as e:
+        logger.error(f"IMAP 확인 실패 ({type(e).__name__}): {e}")
         return None
+    except Exception as e:
+        logger.error(f"IMAP 처리 중 예기치 않은 오류: {e}")
+        return None
+    finally:
+        if mail is not None:
+            try:
+                mail.logout()
+            except Exception:
+                pass
 
 
 def fetch_company_fallback_news():
@@ -1177,18 +1198,48 @@ background:#FFF;color:#333;">
 # 12. 이메일 발송 (복수 수신 지원)
 # ============================================================
 def send_email(app_password, recipients, subject, html):
-    """Gmail SMTP로 이메일 발송."""
+    """Gmail SMTP로 이메일 발송. 수신자별 try-except로 부분 실패 격리."""
+    failed = []
     for recipient in recipients:
-        msg = MIMEMultipart()
-        msg['From'] = f"HR Brief <{SENDER_EMAIL}>"
-        msg['To'] = recipient
-        msg['Subject'] = subject
-        msg.attach(MIMEText(html, 'html', 'utf-8'))
+        try:
+            msg = MIMEMultipart()
+            msg['From'] = f"HR Brief <{SENDER_EMAIL}>"
+            msg['To'] = recipient
+            msg['Subject'] = subject
+            msg.attach(MIMEText(html, 'html', 'utf-8'))
 
-        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
-            server.login(SENDER_EMAIL, app_password)
-            server.sendmail(SENDER_EMAIL, recipient, msg.as_string())
-        logger.info(f"발송 완료: {recipient}")
+            with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=30) as server:
+                server.login(SENDER_EMAIL, app_password)
+                server.sendmail(SENDER_EMAIL, recipient, msg.as_string())
+            logger.info(f"발송 완료: {recipient}")
+        except smtplib.SMTPAuthenticationError as e:
+            logger.error(f"SMTP 인증 실패 ({recipient}): {e}")
+            failed.append(recipient)
+            break  # 인증 실패 시 나머지도 실패할 것이므로 중단
+        except (smtplib.SMTPException, OSError) as e:
+            logger.error(f"발송 실패 ({recipient}): {e}")
+            failed.append(recipient)
+            continue  # 다음 수신자 시도
+    if failed:
+        logger.error(f"발송 실패 수신자: {failed}")
+    return failed
+
+
+# ============================================================
+# 13-A. 환경변수 검증 (Phase 1 안정성 강화)
+# ============================================================
+def validate_environment(mode='newsletter'):
+    """필수 환경변수 사전 검증. 누락 시 명확한 오류 메시지."""
+    common = ['GMAIL_APP_PASSWORD']
+    if mode == 'newsletter':
+        required = common + ['GEMINI_API_KEY', 'NAVER_CLIENT_ID', 'NAVER_CLIENT_SECRET']
+    else:  # weekend
+        required = common
+    missing = [v for v in required if not os.environ.get(v)]
+    if missing:
+        logger.error(f"필수 환경변수 누락: {', '.join(missing)}")
+        raise EnvironmentError(f"필수 환경변수 누락: {', '.join(missing)}")
+    logger.info(f"환경변수 검증 완료 (mode={mode})")
 
 
 # ============================================================
@@ -1196,6 +1247,7 @@ def send_email(app_password, recipients, subject, html):
 # ============================================================
 def run_newsletter():
     """매주 수요일 뉴스레터 메인 실행 (4-Panel)."""
+    validate_environment('newsletter')
     api_key = os.environ.get('GEMINI_API_KEY')
     app_password = os.environ.get('GMAIL_APP_PASSWORD')
     recipient_str = os.environ.get('RECIPIENT_EMAILS', 'tjdaudwo21@otokirm.com')
@@ -1352,6 +1404,7 @@ def run_newsletter():
 
 def run_weekend_request():
     """토요일: 회사 소식 요청 메일 발송."""
+    validate_environment('weekend')
     app_password = os.environ.get('GMAIL_APP_PASSWORD')
     send_news_request_email(app_password)
 
